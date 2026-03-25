@@ -14,9 +14,9 @@ define('DB_CHARSET', 'utf8mb4');
 // Configuracion de la aplicacion
 define('APP_NAME', 'InmoCRM España');
 define('APP_VERSION', '1.1.0');
-define('APP_URL', 'http://localhost/CRM');
+define('APP_URL', 'https://tinoprop.es');
 define('APP_TIMEZONE', 'Europe/Madrid');
-define('APP_ENV', 'production'); // 'development' o 'production'
+define('APP_ENV', 'development'); // 'development' o 'production' - cambiar a production cuando funcione
 
 // Configuracion de uploads
 define('UPLOAD_DIR', __DIR__ . '/../assets/uploads/');

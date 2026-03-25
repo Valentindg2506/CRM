@@ -26,16 +26,9 @@ AddDefaultCharset UTF-8
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
 </IfModule>
 
-# PHP settings (Hostinger compatible)
-<IfModule mod_php.c>
-    php_value upload_max_filesize 10M
-    php_value post_max_size 12M
-    php_value max_execution_time 120
-    php_value max_input_time 120
-    php_value memory_limit 128M
-    php_value session.cookie_httponly 1
-    php_value session.use_strict_mode 1
-</IfModule>
+# PHP settings via .user.ini (Hostinger/LiteSpeed compatible)
+# NOTA: Las directivas php_value NO funcionan en Hostinger (LiteSpeed).
+# Usar .user.ini en la raiz del proyecto para configurar PHP.
 
 # Comprimir respuestas
 <IfModule mod_deflate.c>
