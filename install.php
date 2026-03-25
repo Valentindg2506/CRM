@@ -4,9 +4,14 @@
  * Ejecutar una sola vez para crear la base de datos y tablas
  */
 
+// Mostrar todos los errores durante la instalacion
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
 $host = 'localhost';
-$user = 'valentin';
-$pass = '759234';
+$user = 'root';
+$pass = '';
 $dbname = 'crm_inmobiliario';
 
 try {
