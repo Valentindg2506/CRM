@@ -7,8 +7,8 @@
 // Configuracion de la base de datos
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'crm_inmobiliario');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_USER', 'valentin');
+define('DB_PASS', '759234');
 define('DB_CHARSET', 'utf8mb4');
 
 // Configuracion de la aplicacion

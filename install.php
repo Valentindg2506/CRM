@@ -5,8 +5,8 @@
  */
 
 $host = 'localhost';
-$user = 'root';
-$pass = '';
+$user = 'valentin';
+$pass = '759234';
 $dbname = 'crm_inmobiliario';
 
 try {
