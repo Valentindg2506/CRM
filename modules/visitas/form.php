@@ -1,6 +1,7 @@
 <?php
 $pageTitle = 'Nueva Visita';
 require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../includes/email.php';
 
 $db = getDB();
 $id = intval(get('id'));
@@ -48,6 +49,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Incrementar contador de visitas
                 $db->prepare("UPDATE propiedades SET visitas_count = visitas_count + 1 WHERE id = ?")->execute([$data['propiedad_id']]);
                 registrarActividad('crear', 'visita', $id);
+
+                // Notificar por email
+                try { notificarNuevaVisita($id); } catch (Exception $e) { logError('Email visita error: ' . $e->getMessage()); }
             }
             setFlash('success', $visita ? 'Visita actualizada.' : 'Visita programada correctamente.');
             header('Location: index.php');

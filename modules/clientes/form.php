@@ -1,6 +1,7 @@
 <?php
 $pageTitle = 'Nuevo Cliente';
 require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../includes/validators.php';
 
 $db = getDB();
 $id = intval(get('id'));
@@ -44,7 +45,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'activo' => isset($_POST['activo']) ? 1 : 0,
     ];
 
-    if (empty($data['nombre']) || empty($tipos)) {
+    // Validacion avanzada
+    $validationData = $data;
+    $validationData['tipo'] = $tipos;
+    $validationData['telefono'] = $_POST['telefono'] ?? '';
+    $validationData['telefono2'] = $_POST['telefono2'] ?? '';
+    $validationData['dni_nie_cif'] = $_POST['dni_nie_cif'] ?? '';
+    $validationData['email'] = $_POST['email'] ?? '';
+    $validationData['codigo_postal'] = $_POST['codigo_postal'] ?? '';
+    $erroresValidacion = validarCliente($validationData);
+
+    if (!empty($erroresValidacion)) {
+        $error = implode('<br>', $erroresValidacion);
+    } elseif (empty($data['nombre']) || empty($tipos)) {
         $error = 'Nombre y tipo de cliente son obligatorios.';
     } else {
         try {
@@ -227,6 +240,15 @@ $tiposCliente = $c ? explode(',', $c['tipo']) : [];
                 <input type="checkbox" name="activo" class="form-check-input" id="activo" <?= ($c['activo'] ?? 1) ? 'checked' : '' ?>>
                 <label class="form-check-label" for="activo">Cliente activo</label>
             </div>
+            <?php if (!$id): ?>
+            <div class="form-check mt-2">
+                <input type="checkbox" name="rgpd_consent" class="form-check-input" id="rgpd_consent" required>
+                <label class="form-check-label" for="rgpd_consent">
+                    El cliente ha sido informado y consiente el tratamiento de sus datos personales segun la
+                    <strong>RGPD/LOPD</strong> (Responsable: <?= RGPD_EMPRESA ?>. Finalidad: <?= RGPD_FINALIDAD ?>. Contacto DPD: <?= RGPD_EMAIL_DPD ?>).
+                </label>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 

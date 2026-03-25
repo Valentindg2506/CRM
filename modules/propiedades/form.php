@@ -1,6 +1,7 @@
 <?php
 $pageTitle = 'Nueva Propiedad';
 require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../includes/validators.php';
 
 $db = getDB();
 $id = intval(get('id'));
@@ -69,7 +70,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'fecha_disponibilidad' => post('fecha_disponibilidad') ?: null,
     ];
 
-    if (empty($data['titulo']) || empty($data['tipo']) || empty($data['operacion']) || empty($data['localidad']) || empty($data['provincia'])) {
+    $erroresValidacion = validarPropiedad($data);
+    if (!empty($erroresValidacion)) {
+        $error = implode('<br>', $erroresValidacion);
+    } elseif (empty($data['titulo']) || empty($data['tipo']) || empty($data['operacion']) || empty($data['localidad']) || empty($data['provincia'])) {
         $error = 'Por favor, completa los campos obligatorios (titulo, tipo, operacion, localidad, provincia).';
     } else {
         try {

@@ -1,6 +1,7 @@
 <?php
 $pageTitle = 'Nueva Tarea';
 require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../includes/email.php';
 
 $db = getDB();
 $id = intval(get('id'));
@@ -50,7 +51,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $fields = array_keys($data);
                 $placeholders = str_repeat('?,', count($fields) - 1) . '?';
                 $db->prepare("INSERT INTO tareas (`" . implode('`,`', $fields) . "`) VALUES ($placeholders)")->execute(array_values($data));
-                registrarActividad('crear', 'tarea', $db->lastInsertId(), $data['titulo']);
+                $newTareaId = $db->lastInsertId();
+                registrarActividad('crear', 'tarea', $newTareaId, $data['titulo']);
+
+                // Notificar por email al asignado
+                try { notificarTareaAsignada($newTareaId); } catch (Exception $e) { logError('Email tarea error: ' . $e->getMessage()); }
             }
             setFlash('success', $tarea ? 'Tarea actualizada.' : 'Tarea creada.');
             header('Location: index.php');

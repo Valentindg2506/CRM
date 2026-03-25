@@ -1,6 +1,15 @@
 <?php
 $pageTitle = 'Clientes';
 require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../includes/export.php';
+
+// Exportar CSV
+if (get('accion') === 'exportar') {
+    $db = getDB();
+    $exportStmt = $db->query("SELECT c.*, u.nombre as agente_nombre FROM clientes c LEFT JOIN usuarios u ON c.agente_id = u.id ORDER BY c.created_at DESC");
+    exportarClientes($exportStmt->fetchAll());
+    exit;
+}
 
 $db = getDB();
 $isAdm = isAdmin();
@@ -52,7 +61,10 @@ $baseUrl = 'index.php?tipo=' . urlencode($filtroTipo) . '&origen=' . urlencode($
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <span class="text-muted"><?= $total ?> clientes encontrados</span>
-    <a href="form.php" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo Cliente</a>
+    <div class="d-flex gap-2">
+        <a href="index.php?accion=exportar" class="btn btn-outline-success"><i class="bi bi-file-earmark-spreadsheet"></i> Exportar CSV</a>
+        <a href="form.php" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo Cliente</a>
+    </div>
 </div>
 
 <div class="filter-bar">

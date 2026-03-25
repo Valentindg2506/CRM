@@ -68,6 +68,7 @@ $tipos = getTiposPropiedad();
     </div>
     <div class="d-flex gap-2">
         <a href="form.php?id=<?= $id ?>" class="btn btn-outline-primary"><i class="bi bi-pencil"></i> Editar</a>
+        <a href="rgpd.php?id=<?= $id ?>" class="btn btn-outline-info"><i class="bi bi-shield-lock"></i> RGPD</a>
         <a href="delete.php?id=<?= $id ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-danger" data-confirm="Eliminar este cliente?"><i class="bi bi-trash"></i> Eliminar</a>
     </div>
 </div>

@@ -1,6 +1,15 @@
 <?php
 $pageTitle = 'Finanzas';
 require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../includes/export.php';
+
+// Exportar CSV
+if (get('accion') === 'exportar') {
+    $db = getDB();
+    $exportStmt = $db->query("SELECT f.*, p.referencia as prop_ref, u.nombre as agente_nombre FROM finanzas f LEFT JOIN propiedades p ON f.propiedad_id = p.id LEFT JOIN usuarios u ON f.agente_id = u.id ORDER BY f.fecha DESC");
+    exportarFinanzas($exportStmt->fetchAll());
+    exit;
+}
 
 $db = getDB();
 $isAdm = isAdmin();
@@ -75,7 +84,10 @@ $baseUrl = 'index.php?tipo=' . urlencode($filtroTipo) . '&estado=' . urlencode($
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <span class="text-muted"><?= $total ?> registros</span>
-    <a href="form.php" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo Registro</a>
+    <div class="d-flex gap-2">
+        <a href="index.php?accion=exportar" class="btn btn-outline-success"><i class="bi bi-file-earmark-spreadsheet"></i> Exportar CSV</a>
+        <a href="form.php" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo Registro</a>
+    </div>
 </div>
 
 <div class="filter-bar">

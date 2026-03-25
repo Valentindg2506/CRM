@@ -65,8 +65,11 @@ if (isset($_GET['module'])) {
             </a>
             <?php if (isAdmin()): ?>
             <hr class="mx-3">
-            <a href="<?= APP_URL ?>/modules/usuarios/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'usuarios') !== false ? 'active' : '' ?>">
+            <a href="<?= APP_URL ?>/modules/usuarios/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'usuarios') !== false && strpos($_SERVER['PHP_SELF'], 'backup') === false ? 'active' : '' ?>">
                 <i class="bi bi-gear"></i> Usuarios
+            </a>
+            <a href="<?= APP_URL ?>/modules/usuarios/backup.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'backup') !== false ? 'active' : '' ?>">
+                <i class="bi bi-database-down"></i> Backups
             </a>
             <?php endif; ?>
         </nav>

@@ -90,14 +90,28 @@ function uploadImage($file, $dir = 'propiedades') {
         return ['error' => 'El archivo excede el tamano maximo permitido (10MB)'];
     }
 
-    if (!in_array($file['type'], ALLOWED_IMAGE_TYPES)) {
-        return ['error' => 'Tipo de archivo no permitido. Solo JPG, PNG y WebP'];
+    // Verificar MIME type real (no confiar en el navegador)
+    $realMime = getFileMimeType($file['tmp_name']);
+    if (!in_array($realMime, ALLOWED_IMAGE_TYPES)) {
+        return ['error' => 'Tipo de archivo no permitido. Solo JPG, PNG y WebP. Detectado: ' . $realMime];
     }
 
-    $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-    $filename = uniqid('img_') . '_' . time() . '.' . $ext;
+    // Verificar que es una imagen real
+    $imageInfo = @getimagesize($file['tmp_name']);
+    if (!$imageInfo) {
+        return ['error' => 'El archivo no es una imagen valida'];
+    }
 
-    if (move_uploaded_file($file['tmp_name'], $uploadDir . $filename)) {
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp'])) {
+        $ext = 'jpg'; // Forzar extension segura
+    }
+    $filename = uniqid('img_') . '_' . time() . '.' . $ext;
+    $fullPath = $uploadDir . $filename;
+
+    if (move_uploaded_file($file['tmp_name'], $fullPath)) {
+        // Redimensionar si es necesario
+        resizeImage($fullPath);
         return ['success' => true, 'filename' => $dir . '/' . $filename];
     }
 
@@ -121,12 +135,18 @@ function uploadDocument($file) {
         return ['error' => 'El archivo excede el tamano maximo'];
     }
 
+    // Verificar MIME type real
+    $realMime = getFileMimeType($file['tmp_name']);
     $allowedTypes = array_merge(ALLOWED_IMAGE_TYPES, ALLOWED_DOC_TYPES);
-    if (!in_array($file['type'], $allowedTypes)) {
-        return ['error' => 'Tipo de archivo no permitido'];
+    if (!in_array($realMime, $allowedTypes)) {
+        return ['error' => 'Tipo de archivo no permitido. Detectado: ' . $realMime];
     }
 
-    $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    $allowedExts = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'webp'];
+    if (!in_array($ext, $allowedExts)) {
+        return ['error' => 'Extension de archivo no permitida'];
+    }
     $filename = uniqid('doc_') . '_' . time() . '.' . $ext;
 
     if (move_uploaded_file($file['tmp_name'], $uploadDir . $filename)) {
@@ -267,4 +287,106 @@ function getCount($table, $where = '1=1', $params = []) {
     $stmt = $db->prepare("SELECT COUNT(*) FROM `$table` WHERE $where");
     $stmt->execute($params);
     return $stmt->fetchColumn();
+}
+
+/**
+ * Forzar HTTPS en produccion
+ */
+function forceHTTPS() {
+    if (APP_ENV === 'production' && empty($_SERVER['HTTPS']) && ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') !== 'https') {
+        $redirect = 'https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+        header('HTTP/1.1 301 Moved Permanently');
+        header('Location: ' . $redirect);
+        exit;
+    }
+}
+
+/**
+ * Redimensionar imagen manteniendo proporcion
+ */
+function resizeImage($sourcePath, $maxWidth = null, $maxHeight = null, $quality = null) {
+    $maxWidth = $maxWidth ?? IMAGE_MAX_WIDTH;
+    $maxHeight = $maxHeight ?? IMAGE_MAX_HEIGHT;
+    $quality = $quality ?? IMAGE_QUALITY;
+
+    $imageInfo = @getimagesize($sourcePath);
+    if (!$imageInfo) return false;
+
+    $origWidth = $imageInfo[0];
+    $origHeight = $imageInfo[1];
+    $type = $imageInfo[2];
+
+    // No redimensionar si ya es suficientemente pequeña
+    if ($origWidth <= $maxWidth && $origHeight <= $maxHeight) {
+        return true;
+    }
+
+    // Calcular nuevas dimensiones manteniendo proporcion
+    $ratio = min($maxWidth / $origWidth, $maxHeight / $origHeight);
+    $newWidth = intval($origWidth * $ratio);
+    $newHeight = intval($origHeight * $ratio);
+
+    // Crear imagen segun tipo
+    switch ($type) {
+        case IMAGETYPE_JPEG:
+            $source = imagecreatefromjpeg($sourcePath);
+            break;
+        case IMAGETYPE_PNG:
+            $source = imagecreatefrompng($sourcePath);
+            break;
+        case IMAGETYPE_WEBP:
+            if (function_exists('imagecreatefromwebp')) {
+                $source = imagecreatefromwebp($sourcePath);
+            } else {
+                return true; // Si no soporta webp, dejarlo como esta
+            }
+            break;
+        default:
+            return true;
+    }
+
+    if (!$source) return false;
+
+    // Crear nueva imagen redimensionada
+    $resized = imagecreatetruecolor($newWidth, $newHeight);
+
+    // Preservar transparencia para PNG
+    if ($type === IMAGETYPE_PNG) {
+        imagealphablending($resized, false);
+        imagesavealpha($resized, true);
+    }
+
+    imagecopyresampled($resized, $source, 0, 0, 0, 0, $newWidth, $newHeight, $origWidth, $origHeight);
+
+    // Guardar
+    switch ($type) {
+        case IMAGETYPE_JPEG:
+            imagejpeg($resized, $sourcePath, $quality);
+            break;
+        case IMAGETYPE_PNG:
+            imagepng($resized, $sourcePath, intval(9 - ($quality / 100 * 9)));
+            break;
+        case IMAGETYPE_WEBP:
+            if (function_exists('imagewebp')) {
+                imagewebp($resized, $sourcePath, $quality);
+            }
+            break;
+    }
+
+    imagedestroy($source);
+    imagedestroy($resized);
+    return true;
+}
+
+/**
+ * Verificar MIME type real del archivo (no confiar en $_FILES['type'])
+ */
+function getFileMimeType($filepath) {
+    if (function_exists('finfo_open')) {
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime = finfo_file($finfo, $filepath);
+        finfo_close($finfo);
+        return $mime;
+    }
+    return mime_content_type($filepath);
 }

@@ -1,6 +1,15 @@
 <?php
 $pageTitle = 'Propiedades';
 require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../includes/export.php';
+
+// Exportar CSV
+if (get('accion') === 'exportar') {
+    $db = getDB();
+    $exportStmt = $db->query("SELECT p.*, u.nombre as agente_nombre FROM propiedades p LEFT JOIN usuarios u ON p.agente_id = u.id ORDER BY p.created_at DESC");
+    exportarPropiedades($exportStmt->fetchAll());
+    exit;
+}
 
 $db = getDB();
 $isAdm = isAdmin();
@@ -60,7 +69,10 @@ $baseUrl = 'index.php?tipo=' . urlencode($filtroTipo) . '&operacion=' . urlencod
     <div>
         <span class="text-muted"><?= $total ?> propiedades encontradas</span>
     </div>
-    <a href="form.php" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nueva Propiedad</a>
+    <div class="d-flex gap-2">
+        <a href="index.php?accion=exportar" class="btn btn-outline-success"><i class="bi bi-file-earmark-spreadsheet"></i> Exportar CSV</a>
+        <a href="form.php" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nueva Propiedad</a>
+    </div>
 </div>
 
 <!-- Filtros -->

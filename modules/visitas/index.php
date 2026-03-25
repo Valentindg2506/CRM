@@ -1,6 +1,15 @@
 <?php
 $pageTitle = 'Visitas';
 require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../includes/export.php';
+
+// Exportar CSV
+if (get('accion') === 'exportar') {
+    $db = getDB();
+    $exportStmt = $db->query("SELECT v.*, p.referencia, p.titulo as propiedad, c.nombre as cliente_nombre, c.apellidos as cliente_apellidos, u.nombre as agente_nombre FROM visitas v JOIN propiedades p ON v.propiedad_id = p.id JOIN clientes c ON v.cliente_id = c.id LEFT JOIN usuarios u ON v.agente_id = u.id ORDER BY v.fecha DESC");
+    exportarVisitas($exportStmt->fetchAll());
+    exit;
+}
 
 $db = getDB();
 $isAdm = isAdmin();
@@ -49,7 +58,10 @@ $baseUrl = 'index.php?estado=' . urlencode($filtroEstado) . '&fecha=' . urlencod
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <span class="text-muted"><?= $total ?> visitas</span>
-    <a href="form.php" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nueva Visita</a>
+    <div class="d-flex gap-2">
+        <a href="index.php?accion=exportar" class="btn btn-outline-success"><i class="bi bi-file-earmark-spreadsheet"></i> Exportar CSV</a>
+        <a href="form.php" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nueva Visita</a>
+    </div>
 </div>
 
 <div class="filter-bar">

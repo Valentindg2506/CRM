@@ -4,6 +4,9 @@ require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/helpers.php';
 
+// Forzar HTTPS en produccion
+forceHTTPS();
+
 // Si ya esta logueado, redirigir
 if (isLoggedIn()) {
     header('Location: index.php');
@@ -11,17 +14,34 @@ if (isLoggedIn()) {
 }
 
 $error = '';
+$blocked = false;
+$remaining = 0;
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
 
     if (empty($email) || empty($password)) {
         $error = 'Por favor, introduce tu email y contraseña.';
-    } elseif (login($email, $password)) {
-        header('Location: index.php');
-        exit;
     } else {
-        $error = 'Email o contraseña incorrectos.';
+        $result = login($email, $password);
+
+        if (isset($result['success'])) {
+            header('Location: index.php');
+            exit;
+        } elseif ($result['error'] === 'blocked') {
+            $blocked = true;
+            $remaining = $result['remaining'];
+            $minutos = ceil($remaining / 60);
+            $error = "Demasiados intentos fallidos. Cuenta bloqueada durante $minutos minutos.";
+        } else {
+            $attemptsLeft = LOGIN_MAX_ATTEMPTS - ($_SESSION['login_attempts_' . md5($_SERVER['REMOTE_ADDR'] ?? '')]['count'] ?? 0);
+            if ($attemptsLeft <= 2 && $attemptsLeft > 0) {
+                $error = "Email o contraseña incorrectos. Te quedan $attemptsLeft intentos.";
+            } else {
+                $error = 'Email o contraseña incorrectos.';
+            }
+        }
     }
 }
 ?>
@@ -45,29 +65,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <?php if ($error): ?>
-            <div class="alert alert-danger"><?= sanitize($error) ?></div>
+            <div class="alert alert-danger">
+                <?php if ($blocked): ?>
+                <i class="bi bi-shield-exclamation"></i>
+                <?php endif; ?>
+                <?= sanitize($error) ?>
+            </div>
             <?php endif; ?>
 
-            <form method="POST" action="login.php">
+            <form method="POST" action="login.php" <?= $blocked ? 'class="opacity-50"' : '' ?>>
                 <div class="mb-3">
                     <label class="form-label">Email</label>
                     <div class="input-group">
                         <span class="input-group-text"><i class="bi bi-envelope"></i></span>
                         <input type="email" name="email" class="form-control" placeholder="tu@email.com"
-                               value="<?= sanitize($_POST['email'] ?? '') ?>" required autofocus>
+                               value="<?= sanitize($_POST['email'] ?? '') ?>" required autofocus <?= $blocked ? 'disabled' : '' ?>>
                     </div>
                 </div>
                 <div class="mb-4">
                     <label class="form-label">Contraseña</label>
                     <div class="input-group">
                         <span class="input-group-text"><i class="bi bi-lock"></i></span>
-                        <input type="password" name="password" class="form-control" placeholder="Tu contraseña" required>
+                        <input type="password" name="password" class="form-control" placeholder="Tu contraseña" required <?= $blocked ? 'disabled' : '' ?>>
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary w-100 py-2">
+                <button type="submit" class="btn btn-primary w-100 py-2" <?= $blocked ? 'disabled' : '' ?>>
                     <i class="bi bi-box-arrow-in-right"></i> Iniciar Sesion
                 </button>
             </form>
+
+            <?php if ($blocked): ?>
+            <div class="text-center mt-3">
+                <small class="text-muted" id="countdown">Bloqueado por <span id="timer"><?= ceil($remaining / 60) ?></span> minutos</small>
+            </div>
+            <script>
+                let seconds = <?= $remaining ?>;
+                const timer = document.getElementById('timer');
+                setInterval(function() {
+                    seconds--;
+                    if (seconds <= 0) { location.reload(); return; }
+                    const min = Math.ceil(seconds / 60);
+                    timer.textContent = min;
+                }, 1000);
+            </script>
+            <?php endif; ?>
 
             <div class="text-center mt-4">
                 <small class="text-muted"><?= APP_NAME ?> v<?= APP_VERSION ?></small>
