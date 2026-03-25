@@ -10,8 +10,8 @@ ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
 $host = 'localhost';
-$user = 'root';
-$pass = '';
+$user = 'valentin';
+$pass = '759234';
 $dbname = 'crm_inmobiliario';
 
 try {
