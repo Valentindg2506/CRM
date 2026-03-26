@@ -1,0 +1,24 @@
+# Config with credentials
+config/database.php
+
+# Logs and backups
+logs/*.log
+backups/*.sql
+backups/*.gz
+
+# Uploads
+uploads/*
+!uploads/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PHP
+.user.ini

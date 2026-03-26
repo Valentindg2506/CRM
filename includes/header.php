@@ -13,10 +13,8 @@ $notifCount = $stmtNotif->fetchColumn();
 
 // Determinar pagina activa
 $currentPage = basename($_SERVER['PHP_SELF'], '.php');
-$currentModule = '';
-if (isset($_GET['module'])) {
-    $currentModule = $_GET['module'];
-}
+$currentPath = $_SERVER['PHP_SELF'];
+$isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/index.php' || !preg_match('/modules\//', $currentPath));
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -26,6 +24,7 @@ if (isset($_GET['module'])) {
     <title><?= $pageTitle ?? 'InmoCRM' ?> - <?= APP_NAME ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="<?= APP_URL ?>/assets/css/style.css" rel="stylesheet">
 </head>
 <body>
@@ -36,7 +35,7 @@ if (isset($_GET['module'])) {
             <small class="text-muted">CRM Inmobiliario</small>
         </div>
         <nav class="sidebar-nav">
-            <a href="<?= APP_URL ?>/index.php" class="nav-link <?= $currentPage === 'index' ? 'active' : '' ?>">
+            <a href="<?= APP_URL ?>/index.php" class="nav-link <?= $isDashboard && $currentPage === 'index' ? 'active' : '' ?>">
                 <i class="bi bi-speedometer2"></i> Dashboard
             </a>
             <a href="<?= APP_URL ?>/modules/propiedades/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'propiedades') !== false ? 'active' : '' ?>">
@@ -63,10 +62,31 @@ if (isset($_GET['module'])) {
             <a href="<?= APP_URL ?>/modules/informes/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'informes') !== false ? 'active' : '' ?>">
                 <i class="bi bi-graph-up"></i> Informes
             </a>
+            <a href="<?= APP_URL ?>/modules/pipelines/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'pipelines') !== false ? 'active' : '' ?>">
+                <i class="bi bi-kanban"></i> Pipelines
+            </a>
+            <a href="<?= APP_URL ?>/modules/calendario/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'calendario') !== false ? 'active' : '' ?>">
+                <i class="bi bi-calendar3"></i> Calendario
+            </a>
+            <hr class="mx-3 my-2">
+            <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Comunicacion</small>
+            <a href="<?= APP_URL ?>/modules/email/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/email/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-envelope"></i> Email
+            </a>
+            <a href="<?= APP_URL ?>/modules/whatsapp/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'whatsapp') !== false ? 'active' : '' ?>">
+                <i class="bi bi-whatsapp"></i> WhatsApp
+            </a>
+            <hr class="mx-3 my-2">
+            <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Sistema</small>
+            <a href="<?= APP_URL ?>/modules/automatizaciones/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'automatizaciones') !== false ? 'active' : '' ?>">
+                <i class="bi bi-robot"></i> Automatizaciones
+            </a>
+            <a href="<?= APP_URL ?>/modules/ajustes/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'ajustes') !== false ? 'active' : '' ?>">
+                <i class="bi bi-sliders"></i> Ajustes
+            </a>
             <?php if (isAdmin()): ?>
-            <hr class="mx-3">
             <a href="<?= APP_URL ?>/modules/usuarios/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'usuarios') !== false && strpos($_SERVER['PHP_SELF'], 'backup') === false ? 'active' : '' ?>">
-                <i class="bi bi-gear"></i> Usuarios
+                <i class="bi bi-people-fill"></i> Usuarios
             </a>
             <a href="<?= APP_URL ?>/modules/usuarios/backup.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'backup') !== false ? 'active' : '' ?>">
                 <i class="bi bi-database-down"></i> Backups
