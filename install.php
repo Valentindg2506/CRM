@@ -10,9 +10,9 @@ ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
 $host = 'localhost';
-$user = 'valentin';
-$pass = '759234';
-$dbname = 'crm_inmobiliario';
+$user = 'u908766211_TinoProp_es';
+$pass = '6l/~gX#>V@R';
+$dbname = 'u908766211_TinoProp_es';
 
 try {
     // Conectar sin seleccionar base de datos

@@ -9,15 +9,15 @@
 
 // Configuracion de la base de datos
 define('DB_HOST', 'localhost');
-define('DB_NAME', 'crm_inmobiliario');
-define('DB_USER', 'tu_usuario');
-define('DB_PASS', 'tu_contraseña');
+define('DB_NAME', 'u908766211_TinoProp_es');
+define('DB_USER', 'u908766211_TinoProp_es');
+define('DB_PASS', '6l/~gX#>V@R');
 define('DB_CHARSET', 'utf8mb4');
 
 // Configuracion de la aplicacion
-define('APP_NAME', 'InmoCRM España');
-define('APP_VERSION', '1.2.0');
-define('APP_URL', 'https://tudominio.com');
+define('APP_NAME', 'Tinoprop.es');
+define('APP_VERSION', '1.1.0');
+define('APP_URL', 'https://Tinoprop.es');
 define('APP_TIMEZONE', 'Europe/Madrid');
 define('APP_ENV', 'development'); // 'development' o 'production'
 
