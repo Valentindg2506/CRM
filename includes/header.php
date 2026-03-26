@@ -65,10 +65,28 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
             <a href="<?= APP_URL ?>/modules/pipelines/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'pipelines') !== false ? 'active' : '' ?>">
                 <i class="bi bi-kanban"></i> Pipelines
             </a>
+            <a href="<?= APP_URL ?>/modules/calendario/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'calendario') !== false ? 'active' : '' ?>">
+                <i class="bi bi-calendar3"></i> Calendario
+            </a>
+            <hr class="mx-3 my-2">
+            <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Comunicacion</small>
+            <a href="<?= APP_URL ?>/modules/email/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/email/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-envelope"></i> Email
+            </a>
+            <a href="<?= APP_URL ?>/modules/whatsapp/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'whatsapp') !== false ? 'active' : '' ?>">
+                <i class="bi bi-whatsapp"></i> WhatsApp
+            </a>
+            <hr class="mx-3 my-2">
+            <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Sistema</small>
+            <a href="<?= APP_URL ?>/modules/automatizaciones/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'automatizaciones') !== false ? 'active' : '' ?>">
+                <i class="bi bi-robot"></i> Automatizaciones
+            </a>
+            <a href="<?= APP_URL ?>/modules/ajustes/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'ajustes') !== false ? 'active' : '' ?>">
+                <i class="bi bi-sliders"></i> Ajustes
+            </a>
             <?php if (isAdmin()): ?>
-            <hr class="mx-3">
             <a href="<?= APP_URL ?>/modules/usuarios/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'usuarios') !== false && strpos($_SERVER['PHP_SELF'], 'backup') === false ? 'active' : '' ?>">
-                <i class="bi bi-gear"></i> Usuarios
+                <i class="bi bi-people-fill"></i> Usuarios
             </a>
             <a href="<?= APP_URL ?>/modules/usuarios/backup.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'backup') !== false ? 'active' : '' ?>">
                 <i class="bi bi-database-down"></i> Backups

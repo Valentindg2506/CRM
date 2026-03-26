@@ -55,7 +55,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 registrarActividad('crear', 'tarea', $newTareaId, $data['titulo']);
 
                 // Notificar por email al asignado
-                try { notificarTareaAsignada($newTareaId); } catch (Exception $e) { logError('Email tarea error: ' . $e->getMessage()); }
+                try {
+                    $s = $db->prepare("SELECT * FROM tareas WHERE id = ?"); $s->execute([$newTareaId]); $tData = $s->fetch();
+                    $s = $db->prepare("SELECT * FROM usuarios WHERE id = ?"); $s->execute([$data['asignado_a']]); $aData = $s->fetch();
+                    if ($tData && $aData) { notificarTareaAsignada($tData, $aData); }
+                } catch (Exception $e) { logError('Email tarea error: ' . $e->getMessage()); }
             }
             setFlash('success', $tarea ? 'Tarea actualizada.' : 'Tarea creada.');
             header('Location: index.php');

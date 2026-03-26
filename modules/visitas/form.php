@@ -51,7 +51,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 registrarActividad('crear', 'visita', $id);
 
                 // Notificar por email
-                try { notificarNuevaVisita($id); } catch (Exception $e) { logError('Email visita error: ' . $e->getMessage()); }
+                try {
+                    $s = $db->prepare("SELECT * FROM visitas WHERE id = ?"); $s->execute([$id]); $vData = $s->fetch();
+                    $s = $db->prepare("SELECT * FROM propiedades WHERE id = ?"); $s->execute([$data['propiedad_id']]); $pData = $s->fetch();
+                    $s = $db->prepare("SELECT * FROM clientes WHERE id = ?"); $s->execute([$data['cliente_id']]); $cData = $s->fetch();
+                    $s = $db->prepare("SELECT * FROM usuarios WHERE id = ?"); $s->execute([$data['agente_id']]); $aData = $s->fetch();
+                    if ($vData && $pData && $cData && $aData) {
+                        notificarNuevaVisita($vData, $pData, $cData, $aData);
+                    }
+                } catch (Exception $e) { logError('Email visita error: ' . $e->getMessage()); }
             }
             setFlash('success', $visita ? 'Visita actualizada.' : 'Visita programada correctamente.');
             header('Location: index.php');

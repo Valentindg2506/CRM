@@ -2,21 +2,24 @@
 /**
  * Configuracion de Base de Datos y Aplicacion
  * CRM Inmobiliario - España
+ *
+ * INSTRUCCIONES: Copia este archivo como database.php y rellena tus credenciales
+ * cp config/database.example.php config/database.php
  */
 
 // Configuracion de la base de datos
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'crm_inmobiliario');
-define('DB_USER', 'valentin');
-define('DB_PASS', '759234');
+define('DB_USER', 'tu_usuario');
+define('DB_PASS', 'tu_contraseña');
 define('DB_CHARSET', 'utf8mb4');
 
 // Configuracion de la aplicacion
 define('APP_NAME', 'InmoCRM España');
-define('APP_VERSION', '1.1.0');
-define('APP_URL', 'https://tinoprop.es');
+define('APP_VERSION', '1.2.0');
+define('APP_URL', 'https://tudominio.com');
 define('APP_TIMEZONE', 'Europe/Madrid');
-define('APP_ENV', 'development'); // 'development' o 'production' - cambiar a production cuando funcione
+define('APP_ENV', 'development'); // 'development' o 'production'
 
 // Configuracion de uploads
 define('UPLOAD_DIR', __DIR__ . '/../assets/uploads/');
@@ -27,7 +30,7 @@ define('IMAGE_MAX_WIDTH', 1920);
 define('IMAGE_MAX_HEIGHT', 1080);
 define('IMAGE_QUALITY', 85);
 
-// Configuracion de email (Hostinger: usar mail() por defecto)
+// Configuracion de email
 define('MAIL_METHOD', 'mail'); // 'mail' para mail() de PHP, 'smtp' para SMTP directo
 define('SMTP_HOST', '');
 define('SMTP_PORT', 587);

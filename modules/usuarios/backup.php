@@ -42,8 +42,8 @@ if ($accion === 'eliminar' && get('file') && get('csrf') === csrfToken()) {
 $backups = listarBackups();
 
 // Info de la base de datos
-$dbSize = $db->query("SELECT SUM(data_length + index_length) as size FROM information_schema.tables WHERE table_schema = '" . DB_NAME . "'")->fetch();
-$tablesCount = $db->query("SELECT COUNT(*) as total FROM information_schema.tables WHERE table_schema = '" . DB_NAME . "'")->fetch();
+$s = $db->prepare("SELECT SUM(data_length + index_length) as size FROM information_schema.tables WHERE table_schema = ?"); $s->execute([DB_NAME]); $dbSize = $s->fetch();
+$s = $db->prepare("SELECT COUNT(*) as total FROM information_schema.tables WHERE table_schema = ?"); $s->execute([DB_NAME]); $tablesCount = $s->fetch();
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
