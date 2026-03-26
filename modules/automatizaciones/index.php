@@ -1,10 +1,13 @@
 <?php
-$pageTitle = 'Automatizaciones';
-require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/helpers.php';
+if (session_status() === PHP_SESSION_NONE) session_start();
+requireLogin();
 
 $db = getDB();
 
-// Toggle activo/inactivo
+// Toggle activo/inactivo (antes del header para poder redirect)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'toggle') {
     verifyCsrf();
     $id = intval(post('id'));
@@ -15,6 +18,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'toggle') {
     header('Location: index.php');
     exit;
 }
+
+$pageTitle = 'Automatizaciones';
+require_once __DIR__ . '/../../includes/header.php';
 
 // Obtener automatizaciones
 $automatizaciones = $db->query("

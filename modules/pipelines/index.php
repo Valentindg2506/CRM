@@ -1,14 +1,16 @@
 <?php
-$pageTitle = 'Pipelines';
-require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/helpers.php';
+if (session_status() === PHP_SESSION_NONE) session_start();
+requireLogin();
 
 $db = getDB();
 
-// Crear pipeline
+// Crear pipeline (antes del header para poder hacer redirect)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'crear') {
     verifyCsrf();
 
-    // Verificar limite de 4 pipelines
     $countStmt = $db->query("SELECT COUNT(*) FROM pipelines");
     $totalPipelines = $countStmt->fetchColumn();
 
@@ -26,7 +28,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'crear') {
             $stmt->execute([$nombre, $descripcion, $color, currentUserId()]);
             $pipelineId = $db->lastInsertId();
 
-            // Crear etapas por defecto
             $etapasDefault = [
                 ['Nuevo', '#64748b', 0],
                 ['En progreso', '#3b82f6', 1],
@@ -46,6 +47,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'crear') {
     header('Location: index.php');
     exit;
 }
+
+$pageTitle = 'Pipelines';
+require_once __DIR__ . '/../../includes/header.php';
 
 // Obtener pipelines
 $pipelines = $db->query("
