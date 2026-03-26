@@ -1,13 +1,11 @@
 <?php
-$pageTitle = 'Email';
-require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/helpers.php';
+if (session_status() === PHP_SESSION_NONE) session_start();
+requireLogin();
 
 $db = getDB();
-
-// Obtener cuenta de email del usuario actual
-$stmtCuenta = $db->prepare("SELECT * FROM email_cuentas WHERE usuario_id = ? AND activo = 1 LIMIT 1");
-$stmtCuenta->execute([currentUserId()]);
-$cuenta = $stmtCuenta->fetch();
 
 // Carpeta actual
 $carpeta = get('carpeta', 'inbox');
@@ -16,17 +14,7 @@ if (!in_array($carpeta, $carpetasValidas)) {
     $carpeta = 'inbox';
 }
 
-$carpetaLabels = [
-    'inbox' => 'Bandeja de entrada',
-    'sent' => 'Enviados',
-    'draft' => 'Borradores',
-    'trash' => 'Papelera',
-];
-
-// Busqueda
-$busqueda = get('buscar');
-
-// Marcar como leido/no leido
+// POST handlers antes del header para poder hacer redirect
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'toggle_leido') {
     verifyCsrf();
     $emailId = post('email_id');
@@ -36,7 +24,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'toggle_leido') 
     exit;
 }
 
-// Destacar/desdestacar
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'toggle_destacado') {
     verifyCsrf();
     $emailId = post('email_id');
@@ -46,7 +33,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'toggle_destacad
     exit;
 }
 
-// Mover a papelera
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'mover_papelera') {
     verifyCsrf();
     $emailId = post('email_id');
@@ -56,6 +42,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'mover_papelera'
     header('Location: ' . APP_URL . '/modules/email/index.php?carpeta=' . urlencode($carpeta));
     exit;
 }
+
+$pageTitle = 'Email';
+require_once __DIR__ . '/../../includes/header.php';
+
+// Obtener cuenta de email del usuario actual
+$stmtCuenta = $db->prepare("SELECT * FROM email_cuentas WHERE usuario_id = ? AND activo = 1 LIMIT 1");
+$stmtCuenta->execute([currentUserId()]);
+$cuenta = $stmtCuenta->fetch();
+
+$carpetaLabels = [
+    'inbox' => 'Bandeja de entrada',
+    'sent' => 'Enviados',
+    'draft' => 'Borradores',
+    'trash' => 'Papelera',
+];
+
+$busqueda = get('buscar');
 
 // Obtener conteos por carpeta
 $conteos = ['inbox' => 0, 'sent' => 0, 'draft' => 0, 'trash' => 0];

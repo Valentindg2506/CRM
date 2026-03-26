@@ -4,6 +4,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/helpers.php';
 requireLogin();
+ob_start();
 
 // Contar notificaciones no leidas
 $db = getDB();
