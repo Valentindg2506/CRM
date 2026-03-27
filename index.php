@@ -59,6 +59,25 @@ $tareasUrgentes = $stmtTareas->fetchAll();
 $stmtAct = $db->prepare("SELECT a.*, u.nombre as usuario_nombre FROM actividad_log a LEFT JOIN usuarios u ON a.usuario_id = u.id ORDER BY a.created_at DESC LIMIT 8");
 $stmtAct->execute();
 $actividadReciente = $stmtAct->fetchAll();
+
+// Chart data: Visitas por Mes (last 6 months)
+$stmtVisitasMes = $db->query("SELECT DATE_FORMAT(fecha, '%Y-%m') as mes, COUNT(*) as total FROM visitas WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH) GROUP BY mes ORDER BY mes");
+$visitasPorMes = $stmtVisitasMes->fetchAll();
+$chartVisitasLabels = array_column($visitasPorMes, 'mes');
+$chartVisitasData = array_column($visitasPorMes, 'total');
+
+// Chart data: Propiedades por Tipo
+$stmtPropTipo = $db->query("SELECT tipo, COUNT(*) as total FROM propiedades GROUP BY tipo");
+$propPorTipo = $stmtPropTipo->fetchAll();
+$chartTipoLabels = array_column($propPorTipo, 'tipo');
+$chartTipoData = array_column($propPorTipo, 'total');
+
+// Conversion funnel data
+$totalLeads = getCount('clientes', '1=1');
+$visitasRealizadas = getCount('visitas', "estado = 'realizada'");
+$operacionesCerradas = getCount('propiedades', "estado IN ('vendido','alquilado')");
+$convVisitas = $totalLeads > 0 ? round(($visitasRealizadas / $totalLeads) * 100) : 0;
+$convCierre = $visitasRealizadas > 0 ? round(($operacionesCerradas / $visitasRealizadas) * 100) : 0;
 ?>
 
 <!-- KPI Cards -->
@@ -251,6 +270,61 @@ $actividadReciente = $stmtAct->fetchAll();
     </div>
 </div>
 
+<!-- Graficos -->
+<div class="row g-4 mb-4">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-bar-chart-line"></i> Visitas por Mes</div>
+            <div class="card-body"><canvas id="chartVisitas" height="200"></canvas></div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-pie-chart"></i> Propiedades por Tipo</div>
+            <div class="card-body"><canvas id="chartTipos" height="200"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<!-- Funnel de Conversion -->
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-funnel"></i> Embudo de Conversion</div>
+            <div class="card-body">
+                <div class="row align-items-center text-center">
+                    <div class="col-md-3">
+                        <div class="p-3 rounded" style="background: rgba(16,185,129,0.1);">
+                            <div class="fs-2 fw-bold text-success"><?= $totalLeads ?></div>
+                            <div class="text-muted">Contactos</div>
+                        </div>
+                    </div>
+                    <div class="col-md-1 d-none d-md-block">
+                        <i class="bi bi-chevron-right fs-3 text-muted"></i>
+                        <div class="small text-muted"><?= $convVisitas ?>%</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 rounded" style="background: rgba(59,130,246,0.1);">
+                            <div class="fs-2 fw-bold text-primary"><?= $visitasRealizadas ?></div>
+                            <div class="text-muted">Visitas realizadas</div>
+                        </div>
+                    </div>
+                    <div class="col-md-1 d-none d-md-block">
+                        <i class="bi bi-chevron-right fs-3 text-muted"></i>
+                        <div class="small text-muted"><?= $convCierre ?>%</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 rounded" style="background: rgba(245,158,11,0.1);">
+                            <div class="fs-2 fw-bold text-warning"><?= $operacionesCerradas ?></div>
+                            <div class="text-muted">Operaciones cerradas</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Ultimas propiedades y actividad -->
 <div class="row g-4 mt-2">
     <div class="col-lg-7">
@@ -342,5 +416,50 @@ $actividadReciente = $stmtAct->fetchAll();
         </div>
     </div>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// Visitas por Mes - Bar Chart
+new Chart(document.getElementById('chartVisitas'), {
+    type: 'bar',
+    data: {
+        labels: <?= json_encode($chartVisitasLabels) ?>,
+        datasets: [{
+            label: 'Visitas',
+            data: <?= json_encode(array_map('intval', $chartVisitasData)) ?>,
+            backgroundColor: 'rgba(16, 185, 129, 0.7)',
+            borderColor: '#10b981',
+            borderWidth: 1,
+            borderRadius: 6
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+            y: { beginAtZero: true, ticks: { stepSize: 1 } }
+        }
+    }
+});
+
+// Propiedades por Tipo - Doughnut Chart
+new Chart(document.getElementById('chartTipos'), {
+    type: 'doughnut',
+    data: {
+        labels: <?= json_encode($chartTipoLabels) ?>,
+        datasets: [{
+            data: <?= json_encode(array_map('intval', $chartTipoData)) ?>,
+            backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#6b7280', '#ec4899', '#14b8a6'],
+            borderWidth: 2
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { position: 'right' }
+        }
+    }
+});
+</script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

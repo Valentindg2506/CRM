@@ -118,11 +118,36 @@ $baseUrl = 'index.php?tipo=' . urlencode($filtroTipo) . '&origen=' . urlencode($
     </form>
 </div>
 
+<!-- Bulk Actions Bar -->
+<div id="bulkBar" class="alert alert-primary d-none align-items-center justify-content-between mb-3">
+    <span><strong id="bulkCount">0</strong> clientes seleccionados</span>
+    <div class="d-flex gap-2">
+        <div class="dropdown">
+            <button class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">
+                <i class="bi bi-tag"></i> Asignar Tag
+            </button>
+            <ul class="dropdown-menu" id="bulkTagMenu">
+                <li><span class="dropdown-item text-muted">Cargando tags...</span></li>
+            </ul>
+        </div>
+        <button class="btn btn-sm btn-outline-danger" onclick="bulkDelete()">
+            <i class="bi bi-trash"></i> Eliminar
+        </button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="bulkToggleActive(0)">
+            <i class="bi bi-eye-slash"></i> Desactivar
+        </button>
+        <button class="btn btn-sm btn-outline-success" onclick="bulkToggleActive(1)">
+            <i class="bi bi-eye"></i> Activar
+        </button>
+    </div>
+</div>
+
 <div class="table-container">
     <div class="table-responsive">
         <table class="table table-hover">
             <thead>
                 <tr>
+                    <th style="width:40px"><input type="checkbox" id="selectAll" class="form-check-input"></th>
                     <th>Nombre</th>
                     <th>Tipo</th>
                     <th>Email</th>
@@ -137,6 +162,7 @@ $baseUrl = 'index.php?tipo=' . urlencode($filtroTipo) . '&origen=' . urlencode($
             <tbody>
                 <?php foreach ($clientes as $c): ?>
                 <tr>
+                    <td><input type="checkbox" class="form-check-input bulk-check" value="<?= $c['id'] ?>"></td>
                     <td>
                         <a href="ver.php?id=<?= $c['id'] ?>">
                             <strong><?= sanitize($c['nombre'] . ' ' . $c['apellidos']) ?></strong>
@@ -164,7 +190,7 @@ $baseUrl = 'index.php?tipo=' . urlencode($filtroTipo) . '&origen=' . urlencode($
                 </tr>
                 <?php endforeach; ?>
                 <?php if (empty($clientes)): ?>
-                <tr><td colspan="9" class="text-center text-muted py-5">
+                <tr><td colspan="10" class="text-center text-muted py-5">
                     <i class="bi bi-people fs-1 d-block mb-2"></i>No se encontraron clientes
                 </td></tr>
                 <?php endif; ?>
@@ -174,5 +200,82 @@ $baseUrl = 'index.php?tipo=' . urlencode($filtroTipo) . '&origen=' . urlencode($
 </div>
 
 <?= renderPagination($pagination, $baseUrl) ?>
+
+<script>
+const selectAll = document.getElementById('selectAll');
+const bulkBar = document.getElementById('bulkBar');
+const bulkCount = document.getElementById('bulkCount');
+const checks = document.querySelectorAll('.bulk-check');
+const csrfToken = '<?= csrfToken() ?>';
+
+function updateBulkBar() {
+    const selected = document.querySelectorAll('.bulk-check:checked');
+    if (selected.length > 0) {
+        bulkBar.classList.remove('d-none');
+        bulkBar.classList.add('d-flex');
+        bulkCount.textContent = selected.length;
+    } else {
+        bulkBar.classList.add('d-none');
+        bulkBar.classList.remove('d-flex');
+    }
+}
+
+selectAll.addEventListener('change', function() {
+    checks.forEach(c => c.checked = this.checked);
+    updateBulkBar();
+});
+checks.forEach(c => c.addEventListener('change', updateBulkBar));
+
+function getSelectedIds() {
+    return Array.from(document.querySelectorAll('.bulk-check:checked')).map(c => c.value);
+}
+
+function bulkAction(accion, extra = {}) {
+    const ids = getSelectedIds();
+    if (!ids.length) return;
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = 'bulk.php';
+    form.innerHTML = '<input type="hidden" name="csrf_token" value="' + csrfToken + '">' +
+        '<input type="hidden" name="accion" value="' + accion + '">' +
+        '<input type="hidden" name="ids" value="' + ids.join(',') + '">';
+    for (const [k, v] of Object.entries(extra)) {
+        form.innerHTML += '<input type="hidden" name="' + k + '" value="' + v + '">';
+    }
+    document.body.appendChild(form);
+    form.submit();
+}
+
+function bulkDelete() {
+    if (confirm('Seguro que deseas eliminar los clientes seleccionados?')) {
+        bulkAction('eliminar');
+    }
+}
+
+function bulkToggleActive(val) {
+    bulkAction('toggle_activo', { activo: val });
+}
+
+function bulkAssignTag(tagId) {
+    bulkAction('asignar_tag', { tag_id: tagId });
+}
+
+// Load tags into bulk menu
+fetch('tags.php', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'accion=listar_tags&csrf_token=' + csrfToken
+}).then(r => r.json()).then(data => {
+    const menu = document.getElementById('bulkTagMenu');
+    if (data.tags && data.tags.length) {
+        menu.innerHTML = data.tags.map(t =>
+            '<li><a class="dropdown-item" href="#" onclick="bulkAssignTag(' + t.id + ');return false;">' +
+            '<span class="badge me-1" style="background:' + t.color + '">&nbsp;</span>' + t.nombre + '</a></li>'
+        ).join('');
+    } else {
+        menu.innerHTML = '<li><span class="dropdown-item text-muted">No hay tags</span></li>';
+    }
+}).catch(() => {});
+</script>
 
 <?php require_once __DIR__ . '/../../includes/footer.php'; ?>

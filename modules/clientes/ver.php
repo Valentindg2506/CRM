@@ -67,6 +67,7 @@ $tipos = getTiposPropiedad();
         <?php if (!$c['activo']): ?><span class="badge bg-secondary">Inactivo</span><?php endif; ?>
     </div>
     <div class="d-flex gap-2">
+        <a href="timeline.php?id=<?= $id ?>" class="btn btn-outline-secondary"><i class="bi bi-clock-history"></i> Timeline</a>
         <a href="form.php?id=<?= $id ?>" class="btn btn-outline-primary"><i class="bi bi-pencil"></i> Editar</a>
         <a href="rgpd.php?id=<?= $id ?>" class="btn btn-outline-info"><i class="bi bi-shield-lock"></i> RGPD</a>
         <a href="delete.php?id=<?= $id ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-danger" data-confirm="Eliminar este cliente?"><i class="bi bi-trash"></i> Eliminar</a>
@@ -134,6 +135,53 @@ $tipos = getTiposPropiedad();
         <div class="card mb-4">
             <div class="card-header"><i class="bi bi-chat-text"></i> Notas</div>
             <div class="card-body"><?= nl2br(sanitize($c['notas'])) ?></div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Tags -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-tags"></i> Etiquetas</span>
+                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalTags"><i class="bi bi-plus"></i></button>
+            </div>
+            <div class="card-body" id="tagsContainer">
+                <?php
+                $stmtTags = $db->prepare("SELECT t.id, t.nombre, t.color FROM tags t JOIN cliente_tags ct ON t.id = ct.tag_id WHERE ct.cliente_id = ? ORDER BY t.nombre");
+                $stmtTags->execute([$id]);
+                $clienteTags = $stmtTags->fetchAll();
+                if (empty($clienteTags)): ?>
+                <span class="text-muted" id="noTagsMsg">Sin etiquetas</span>
+                <?php else:
+                    foreach ($clienteTags as $tag): ?>
+                <span class="badge me-1 mb-1" style="background:<?= sanitize($tag['color']) ?>; font-size: 0.8rem;">
+                    <?= sanitize($tag['nombre']) ?>
+                    <a href="#" class="text-white ms-1" onclick="quitarTag(<?= $tag['id'] ?>); return false;" title="Quitar">&times;</a>
+                </span>
+                <?php endforeach; endif; ?>
+            </div>
+        </div>
+
+        <!-- Campos Personalizados -->
+        <?php
+        $stmtCF = $db->query("SELECT cf.*, cfv.valor FROM custom_fields cf LEFT JOIN custom_field_values cfv ON cf.id = cfv.field_id AND cfv.entidad_id = " . intval($id) . " WHERE cf.entidad = 'cliente' AND cf.activo = 1 ORDER BY cf.orden");
+        $customFields = $stmtCF->fetchAll();
+        if (!empty($customFields)): ?>
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-ui-checks-grid"></i> Campos Personalizados</div>
+            <div class="card-body">
+                <?php foreach ($customFields as $cf): ?>
+                <div class="mb-2">
+                    <div class="detail-label"><?= sanitize($cf['nombre']) ?></div>
+                    <div class="detail-value">
+                        <?php if ($cf['tipo'] === 'checkbox'): ?>
+                            <?= $cf['valor'] ? '<i class="bi bi-check-circle text-success"></i> Si' : '<span class="text-muted">No</span>' ?>
+                        <?php else: ?>
+                            <?= sanitize($cf['valor'] ?? '-') ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
         </div>
         <?php endif; ?>
 
@@ -224,5 +272,80 @@ $tipos = getTiposPropiedad();
         </div>
     </div>
 </div>
+
+<!-- Modal Tags -->
+<div class="modal fade" id="modalTags" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title"><i class="bi bi-tags"></i> Gestionar Tags</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="tagsList" class="mb-3">Cargando...</div>
+                <hr>
+                <h6 class="small text-muted">Crear nuevo tag</h6>
+                <div class="input-group input-group-sm">
+                    <input type="text" id="nuevoTagNombre" class="form-control" placeholder="Nombre" maxlength="50">
+                    <input type="color" id="nuevoTagColor" class="form-control form-control-color" value="#10b981" style="max-width:40px">
+                    <button class="btn btn-primary" onclick="crearTag()"><i class="bi bi-plus"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const clienteId = <?= $id ?>;
+const csrf = '<?= csrfToken() ?>';
+
+function quitarTag(tagId) {
+    fetch('tags.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'accion=quitar_tag&cliente_id=' + clienteId + '&tag_id=' + tagId + '&csrf_token=' + csrf
+    }).then(r => r.json()).then(d => { if (d.success) location.reload(); });
+}
+
+function agregarTag(tagId) {
+    fetch('tags.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'accion=agregar_tag&cliente_id=' + clienteId + '&tag_id=' + tagId + '&csrf_token=' + csrf
+    }).then(r => r.json()).then(d => { if (d.success) location.reload(); });
+}
+
+function crearTag() {
+    const nombre = document.getElementById('nuevoTagNombre').value.trim();
+    const color = document.getElementById('nuevoTagColor').value;
+    if (!nombre) return;
+    fetch('tags.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'accion=crear_tag&nombre=' + encodeURIComponent(nombre) + '&color=' + encodeURIComponent(color) + '&csrf_token=' + csrf
+    }).then(r => r.json()).then(d => {
+        if (d.success && d.tag) agregarTag(d.tag.id);
+    });
+}
+
+// Cargar tags en modal
+document.getElementById('modalTags').addEventListener('show.bs.modal', function() {
+    fetch('tags.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'accion=listar_tags&csrf_token=' + csrf
+    }).then(r => r.json()).then(data => {
+        const list = document.getElementById('tagsList');
+        if (data.tags && data.tags.length) {
+            list.innerHTML = data.tags.map(t =>
+                '<a href="#" class="badge me-1 mb-1 text-decoration-none" style="background:' + t.color + '; font-size:0.8rem;" onclick="agregarTag(' + t.id + ');return false;">' +
+                t.nombre + ' <i class="bi bi-plus-circle"></i></a>'
+            ).join('');
+        } else {
+            list.innerHTML = '<span class="text-muted">No hay tags creados</span>';
+        }
+    });
+});
+</script>
 
 <?php require_once __DIR__ . '/../../includes/footer.php'; ?>

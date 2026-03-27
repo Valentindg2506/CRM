@@ -71,6 +71,9 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
             </a>
             <hr class="mx-3 my-2">
             <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Comunicacion</small>
+            <a href="<?= APP_URL ?>/modules/inbox/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/inbox/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-inboxes"></i> Bandeja Unificada
+            </a>
             <a href="<?= APP_URL ?>/modules/email/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/email/') !== false ? 'active' : '' ?>">
                 <i class="bi bi-envelope"></i> Email
             </a>
