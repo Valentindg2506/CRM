@@ -224,6 +224,30 @@ $widgetOptions = [
     </div>
 </form>
 
+<!-- Acceso rapido a herramientas -->
+<div class="card mt-4 shadow-sm border-0">
+    <div class="card-header"><i class="bi bi-tools"></i> Herramientas</div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <a href="custom_fields.php" class="btn btn-outline-primary w-100">
+                    <i class="bi bi-ui-checks-grid"></i> Campos Personalizados
+                </a>
+            </div>
+            <div class="col-md-4">
+                <a href="<?= APP_URL ?>/modules/calendario/booking_config.php" class="btn btn-outline-primary w-100">
+                    <i class="bi bi-calendar-check"></i> Configurar Booking
+                </a>
+            </div>
+            <div class="col-md-4">
+                <a href="<?= APP_URL ?>/modules/automatizaciones/index.php" class="btn btn-outline-primary w-100">
+                    <i class="bi bi-robot"></i> Automatizaciones
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
 .color-option input:checked + span {
     border-color: #000 !important;
