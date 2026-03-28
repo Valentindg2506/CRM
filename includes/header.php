@@ -69,6 +69,20 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
             <a href="<?= APP_URL ?>/modules/calendario/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'calendario') !== false ? 'active' : '' ?>">
                 <i class="bi bi-calendar3"></i> Calendario
             </a>
+            <a href="<?= APP_URL ?>/modules/pagos/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'pagos') !== false ? 'active' : '' ?>">
+                <i class="bi bi-receipt"></i> Facturacion
+            </a>
+            <hr class="mx-3 my-2">
+            <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Marketing</small>
+            <a href="<?= APP_URL ?>/modules/formularios/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'formularios') !== false ? 'active' : '' ?>">
+                <i class="bi bi-ui-checks-grid"></i> Formularios
+            </a>
+            <a href="<?= APP_URL ?>/modules/landing/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/landing/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-file-earmark-richtext"></i> Landing Pages
+            </a>
+            <a href="<?= APP_URL ?>/modules/marketing/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'marketing') !== false ? 'active' : '' ?>">
+                <i class="bi bi-megaphone"></i> Marketing
+            </a>
             <hr class="mx-3 my-2">
             <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Comunicacion</small>
             <a href="<?= APP_URL ?>/modules/inbox/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/inbox/') !== false ? 'active' : '' ?>">
@@ -79,6 +93,12 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
             </a>
             <a href="<?= APP_URL ?>/modules/whatsapp/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'whatsapp') !== false ? 'active' : '' ?>">
                 <i class="bi bi-whatsapp"></i> WhatsApp
+            </a>
+            <a href="<?= APP_URL ?>/modules/sms/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/sms/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-phone"></i> SMS
+            </a>
+            <a href="<?= APP_URL ?>/modules/chat/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/chat/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-chat-dots"></i> Chat Web
             </a>
             <hr class="mx-3 my-2">
             <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Sistema</small>

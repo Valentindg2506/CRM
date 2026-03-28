@@ -72,7 +72,10 @@ $totalAutomatizaciones = count($automatizaciones);
     <div>
         <span class="text-muted"><?= $totalAutomatizaciones ?> automatizacion<?= $totalAutomatizaciones !== 1 ? 'es' : '' ?></span>
     </div>
-    <div>
+    <div class="d-flex gap-2">
+        <a href="workflows.php" class="btn btn-outline-primary">
+            <i class="bi bi-diagram-3"></i> Workflows Visuales
+        </a>
         <a href="form.php" class="btn btn-primary">
             <i class="bi bi-plus-lg"></i> Nueva Automatizacion
         </a>
