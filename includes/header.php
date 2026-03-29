@@ -69,8 +69,49 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
             <a href="<?= APP_URL ?>/modules/calendario/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'calendario') !== false ? 'active' : '' ?>">
                 <i class="bi bi-calendar3"></i> Calendario
             </a>
+            <a href="<?= APP_URL ?>/modules/pagos/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'pagos') !== false ? 'active' : '' ?>">
+                <i class="bi bi-receipt"></i> Facturacion
+            </a>
+            <a href="<?= APP_URL ?>/modules/presupuestos/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'presupuestos') !== false ? 'active' : '' ?>">
+                <i class="bi bi-file-earmark-text"></i> Presupuestos
+            </a>
+            <a href="<?= APP_URL ?>/modules/contratos/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'contratos') !== false ? 'active' : '' ?>">
+                <i class="bi bi-pen"></i> Contratos
+            </a>
+            <hr class="mx-3 my-2">
+            <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Marketing</small>
+            <a href="<?= APP_URL ?>/modules/formularios/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'formularios') !== false ? 'active' : '' ?>">
+                <i class="bi bi-ui-checks-grid"></i> Formularios
+            </a>
+            <a href="<?= APP_URL ?>/modules/encuestas/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'encuestas') !== false ? 'active' : '' ?>">
+                <i class="bi bi-clipboard2-data"></i> Encuestas
+            </a>
+            <a href="<?= APP_URL ?>/modules/funnels/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'funnels') !== false ? 'active' : '' ?>">
+                <i class="bi bi-funnel"></i> Funnels
+            </a>
+            <a href="<?= APP_URL ?>/modules/landing/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/landing/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-file-earmark-richtext"></i> Landing Pages
+            </a>
+            <a href="<?= APP_URL ?>/modules/campanas/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'campanas') !== false ? 'active' : '' ?>">
+                <i class="bi bi-send"></i> Campanas Drip
+            </a>
+            <a href="<?= APP_URL ?>/modules/marketing/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/marketing/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-megaphone"></i> Marketing
+            </a>
+            <a href="<?= APP_URL ?>/modules/ab-testing/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'ab-testing') !== false ? 'active' : '' ?>">
+                <i class="bi bi-arrow-left-right"></i> A/B Testing
+            </a>
+            <a href="<?= APP_URL ?>/modules/ads/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/ads/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-badge-ad"></i> Ads Report
+            </a>
+            <a href="<?= APP_URL ?>/modules/social/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/social/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-share"></i> Redes Sociales
+            </a>
             <hr class="mx-3 my-2">
             <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Comunicacion</small>
+            <a href="<?= APP_URL ?>/modules/conversaciones/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'conversaciones') !== false ? 'active' : '' ?>">
+                <i class="bi bi-chat-left-text"></i> Conversaciones
+            </a>
             <a href="<?= APP_URL ?>/modules/inbox/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/inbox/') !== false ? 'active' : '' ?>">
                 <i class="bi bi-inboxes"></i> Bandeja Unificada
             </a>
@@ -80,10 +121,36 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
             <a href="<?= APP_URL ?>/modules/whatsapp/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'whatsapp') !== false ? 'active' : '' ?>">
                 <i class="bi bi-whatsapp"></i> WhatsApp
             </a>
+            <a href="<?= APP_URL ?>/modules/sms/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/sms/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-phone"></i> SMS
+            </a>
+            <a href="<?= APP_URL ?>/modules/chat/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/chat/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-chat-dots"></i> Chat Web
+            </a>
+            <hr class="mx-3 my-2">
+            <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Contenido</small>
+            <a href="<?= APP_URL ?>/modules/blog/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/blog/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-journal-richtext"></i> Blog
+            </a>
+            <a href="<?= APP_URL ?>/modules/cursos/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/cursos/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-mortarboard"></i> Cursos
+            </a>
+            <a href="<?= APP_URL ?>/modules/comunidad/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'comunidad') !== false ? 'active' : '' ?>">
+                <i class="bi bi-people-fill"></i> Comunidad
+            </a>
+            <a href="<?= APP_URL ?>/modules/medios/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/medios/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-images"></i> Medios
+            </a>
             <hr class="mx-3 my-2">
             <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Sistema</small>
             <a href="<?= APP_URL ?>/modules/automatizaciones/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'automatizaciones') !== false ? 'active' : '' ?>">
                 <i class="bi bi-robot"></i> Automatizaciones
+            </a>
+            <a href="<?= APP_URL ?>/modules/ia/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/ia/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-cpu"></i> IA Asistente
+            </a>
+            <a href="<?= APP_URL ?>/modules/afiliados/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'afiliados') !== false ? 'active' : '' ?>">
+                <i class="bi bi-link-45deg"></i> Afiliados
             </a>
             <a href="<?= APP_URL ?>/modules/ajustes/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'ajustes') !== false ? 'active' : '' ?>">
                 <i class="bi bi-sliders"></i> Ajustes
