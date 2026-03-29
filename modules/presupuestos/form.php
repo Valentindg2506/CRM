@@ -59,7 +59,7 @@ $pageTitle = $id ? 'Editar Presupuesto' : 'Nuevo Presupuesto';
 require_once __DIR__ . '/../../includes/header.php';
 
 $clientes = $db->query("SELECT id, nombre, apellidos FROM clientes WHERE activo=1 ORDER BY nombre")->fetchAll();
-$propiedades = $db->query("SELECT id, titulo, referencia FROM propiedades WHERE activo=1 ORDER BY titulo")->fetchAll();
+$propiedades = $db->query("SELECT id, titulo, referencia FROM propiedades WHERE estado != 'retirado' ORDER BY titulo")->fetchAll();
 $config = $db->query("SELECT iva_defecto FROM configuracion_pagos LIMIT 1")->fetch();
 $ivaDefault = $config['iva_defecto'] ?? 21;
 ?>

@@ -48,7 +48,7 @@ $pageTitle = 'Editor Funnel: ' . $funnel['nombre'];
 require_once __DIR__ . '/../../includes/header.php';
 
 $pasos = $db->prepare("SELECT * FROM funnel_pasos WHERE funnel_id=? ORDER BY orden"); $pasos->execute([$id]); $pasos = $pasos->fetchAll();
-$landings = $db->query("SELECT id, titulo FROM landing_pages WHERE activo=1 ORDER BY titulo")->fetchAll();
+$landings = $db->query("SELECT id, titulo FROM landing_pages WHERE activa=1 ORDER BY titulo")->fetchAll();
 $formularios = $db->query("SELECT id, nombre FROM formularios WHERE activo=1 ORDER BY nombre")->fetchAll();
 
 $tipoIcons = ['landing'=>'bi-file-earmark-richtext text-primary','formulario'=>'bi-ui-checks-grid text-success','upsell'=>'bi-arrow-up-circle text-warning','downsell'=>'bi-arrow-down-circle text-info','gracias'=>'bi-check-circle text-success','custom'=>'bi-code-slash text-secondary'];
