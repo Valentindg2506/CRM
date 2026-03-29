@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($accion === 'crear' || $accion === 'editar') {
         $nombre = trim(post('nombre'));
         $asunto = trim(post('asunto'));
-        $contenido = post('contenido');
+        $contenido = $_POST['contenido'] ?? '';
         $categoria = post('categoria','general');
         if (empty($nombre) || empty($asunto)) { setFlash('danger', 'Nombre y asunto son obligatorios.'); }
         else {

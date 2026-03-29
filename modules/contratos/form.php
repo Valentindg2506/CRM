@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $titulo = trim(post('titulo'));
     $clienteId = intval(post('cliente_id')) ?: null;
     $propiedadId = intval(post('propiedad_id')) ?: null;
-    $contenido = post('contenido');
+    $contenido = $_POST['contenido'] ?? '';
     $fechaExp = post('fecha_expiracion') ?: null;
 
     // Replace variables

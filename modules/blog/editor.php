@@ -16,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $slug = post('slug') ? trim(post('slug')) : preg_replace('/[^a-z0-9]+/','-',strtolower(preg_replace('/[áéíóúñü]/u', '', $titulo)));
     $slug = trim($slug, '-');
     $extracto = trim(post('extracto'));
-    $contenido = post('contenido');
+    $contenido = $_POST['contenido'] ?? '';
     $imagenDest = trim(post('imagen_destacada'));
     $categoria = trim(post('categoria'));
     $tags = trim(post('tags'));

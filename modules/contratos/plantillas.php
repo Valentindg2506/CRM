@@ -13,10 +13,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id = intval(post('pid'));
         if ($id) {
             $db->prepare("UPDATE contrato_plantillas SET nombre=?, contenido=?, categoria=? WHERE id=?")
-                ->execute([trim(post('nombre')), post('contenido'), trim(post('categoria')), $id]);
+                ->execute([trim(post('nombre')), $_POST['contenido'] ?? '', trim(post('categoria')), $id]);
         } else {
             $db->prepare("INSERT INTO contrato_plantillas (nombre, contenido, categoria) VALUES (?,?,?)")
-                ->execute([trim(post('nombre')), post('contenido'), trim(post('categoria'))]);
+                ->execute([trim(post('nombre')), $_POST['contenido'] ?? '', trim(post('categoria'))]);
         }
         setFlash('success','Plantilla guardada.');
     }
@@ -44,7 +44,7 @@ $plantillas = $db->query("SELECT * FROM contrato_plantillas ORDER BY categoria, 
                 <div class="small text-muted mt-2"><?= sanitize(mb_strimwidth(strip_tags($pl['contenido']),0,120,'...')) ?></div>
             </div>
             <div class="card-footer bg-white border-0 d-flex justify-content-between">
-                <button class="btn btn-sm btn-outline-primary" onclick='editPlantilla(<?= json_encode($pl) ?>)'><i class="bi bi-pencil"></i> Editar</button>
+                <button class="btn btn-sm btn-outline-primary" onclick='editPlantilla(<?= htmlspecialchars(json_encode($pl), ENT_QUOTES) ?>)'><i class="bi bi-pencil"></i> Editar</button>
                 <form method="POST" onsubmit="return confirm('Eliminar?')"><?= csrfField() ?><input type="hidden" name="accion" value="eliminar"><input type="hidden" name="pid" value="<?= $pl['id'] ?>"><button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button></form>
             </div>
         </div>

@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($accion === 'reordenar') {
-        $orden = json_decode(post('orden'), true);
+        $orden = json_decode($_POST['orden'] ?? '[]', true);
         if (is_array($orden)) {
             $stmt = $db->prepare("UPDATE custom_fields SET orden = ? WHERE id = ?");
             foreach ($orden as $pos => $id) {

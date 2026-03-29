@@ -133,7 +133,7 @@ $tipoIcons = ['email'=>'bi-envelope text-primary','sms'=>'bi-phone text-success'
                                 </div>
                                 <div class="d-flex gap-1">
                                     <small class="text-muted"><?= $p['enviados'] ?> env.</small>
-                                    <button class="btn btn-xs btn-outline-primary" onclick='editPaso(<?= json_encode($p) ?>)'><i class="bi bi-pencil"></i></button>
+                                    <button class="btn btn-xs btn-outline-primary" onclick='editPaso(<?= htmlspecialchars(json_encode($p), ENT_QUOTES) ?>)'><i class="bi bi-pencil"></i></button>
                                     <form method="POST" class="d-inline" onsubmit="return confirm('Eliminar?')"><?= csrfField() ?><input type="hidden" name="accion" value="eliminar_paso"><input type="hidden" name="paso_id" value="<?= $p['id'] ?>"><button class="btn btn-xs btn-outline-danger"><i class="bi bi-trash"></i></button></form>
                                 </div>
                             </div>

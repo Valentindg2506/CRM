@@ -18,15 +18,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($a === 'chat') {
-        $mensaje = trim(post('mensaje'));
+        $mensaje = trim($_POST['mensaje'] ?? '');
         $config = $db->query("SELECT * FROM ia_config WHERE id=1")->fetch();
 
         if (!$config || !$config['activo'] || !$config['api_key']) {
+            header('Content-Type: application/json');
             echo json_encode(['error'=>'IA no configurada']);
             exit;
         }
 
-        $historial = json_decode(post('historial','[]'), true) ?: [];
+        $historial = json_decode($_POST['historial'] ?? '[]', true) ?: [];
         $messages = [['role'=>'system','content'=>$config['prompt_sistema']]];
         foreach ($historial as $h) $messages[] = $h;
         $messages[] = ['role'=>'user','content'=>$mensaje];

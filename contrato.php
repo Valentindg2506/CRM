@@ -60,8 +60,8 @@ $config = $db->query("SELECT empresa_nombre FROM configuracion_pagos LIMIT 1")->
         <?php if ($co['firma_imagen']): ?>
         <div class="card-footer bg-white p-4">
             <h6>Firma:</h6>
-            <img src="<?= $co['firma_imagen'] ?>" style="max-height:100px">
-            <p class="small text-muted mt-1"><?= htmlspecialchars($co['firmante_nombre']) ?> - <?= $co['firmado_at']?date('d/m/Y H:i',strtotime($co['firmado_at'])):'' ?> - IP: <?= $co['firmado_ip']??'' ?></p>
+            <img src="<?= htmlspecialchars($co['firma_imagen'] ?? '') ?>" style="max-height:100px">
+            <p class="small text-muted mt-1"><?= htmlspecialchars($co['firmante_nombre']) ?> - <?= $co['firmado_at']?date('d/m/Y H:i',strtotime($co['firmado_at'])):'' ?> - IP: <?= htmlspecialchars($co['firmado_ip']??'') ?></p>
         </div>
         <?php endif; ?>
     </div>

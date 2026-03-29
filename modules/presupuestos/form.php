@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $validezDias = intval(post('validez_dias')) ?: 30;
     $notas = trim(post('notas'));
     $condiciones = trim(post('condiciones'));
-    $lineasJson = post('lineas_json');
+    $lineasJson = $_POST['lineas_json'] ?? '[]';
     $lineasArr = json_decode($lineasJson, true) ?: [];
 
     $subtotal = 0; $ivaTotal = 0;

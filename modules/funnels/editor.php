@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($accion === 'editar_paso') {
         $pid = intval(post('paso_id'));
         $db->prepare("UPDATE funnel_pasos SET nombre=?, tipo=?, landing_page_id=?, formulario_id=?, contenido_html=? WHERE id=? AND funnel_id=?")
-            ->execute([trim(post('paso_nombre')), post('paso_tipo'), intval(post('landing_page_id'))?:null, intval(post('formulario_id'))?:null, post('contenido_html'), $pid, $id]);
+            ->execute([trim(post('paso_nombre')), post('paso_tipo'), intval(post('landing_page_id'))?:null, intval(post('formulario_id'))?:null, $_POST['contenido_html'] ?? '', $pid, $id]);
         setFlash('success','Paso actualizado.'); header('Location: editor.php?id='.$id); exit;
     }
     if ($accion === 'eliminar_paso') {
@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         setFlash('success','Paso eliminado.'); header('Location: editor.php?id='.$id); exit;
     }
     if ($accion === 'reordenar') {
-        $orden = json_decode(post('orden_json'), true);
+        $orden = json_decode($_POST['orden_json'] ?? '[]', true);
         if ($orden) {
             $stmt = $db->prepare("UPDATE funnel_pasos SET orden=? WHERE id=? AND funnel_id=?");
             foreach ($orden as $i => $pid) $stmt->execute([$i+1, intval($pid), $id]);

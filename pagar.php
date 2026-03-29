@@ -17,7 +17,7 @@ $config = $db->query("SELECT * FROM configuracion_pagos LIMIT 1")->fetch(PDO::FE
 $lineas = json_decode($f['lineas'], true) ?: [];
 $moneda = $config['moneda'] ?? 'EUR';
 $stripeKey = $config['stripe_public_key'] ?? '';
-$empresa = $config['nombre_empresa'] ?? 'Empresa';
+$empresa = $config['empresa_nombre'] ?? 'Empresa';
 
 // Handle Stripe payment confirmation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['payment_intent'])) {
@@ -149,14 +149,14 @@ $showSuccess = isset($_GET['ok']) || ($f['estado'] === 'pagada');
         <?php else: ?>
         <div class="card-footer bg-white p-4 text-center">
             <p class="text-muted mb-2">Para realizar el pago, contacte con nosotros:</p>
-            <?php if (!empty($config['email_empresa'])): ?>
-            <a href="mailto:<?= htmlspecialchars($config['email_empresa']) ?>" class="btn btn-outline-primary">
-                <i class="bi bi-envelope"></i> <?= htmlspecialchars($config['email_empresa']) ?>
+            <?php if (!empty($config['empresa_email'])): ?>
+            <a href="mailto:<?= htmlspecialchars($config['empresa_email']) ?>" class="btn btn-outline-primary">
+                <i class="bi bi-envelope"></i> <?= htmlspecialchars($config['empresa_email']) ?>
             </a>
             <?php endif; ?>
-            <?php if (!empty($config['telefono_empresa'])): ?>
-            <a href="tel:<?= htmlspecialchars($config['telefono_empresa']) ?>" class="btn btn-outline-success ms-2">
-                <i class="bi bi-telephone"></i> <?= htmlspecialchars($config['telefono_empresa']) ?>
+            <?php if (!empty($config['empresa_telefono'])): ?>
+            <a href="tel:<?= htmlspecialchars($config['empresa_telefono']) ?>" class="btn btn-outline-success ms-2">
+                <i class="bi bi-telephone"></i> <?= htmlspecialchars($config['empresa_telefono']) ?>
             </a>
             <?php endif; ?>
         </div>

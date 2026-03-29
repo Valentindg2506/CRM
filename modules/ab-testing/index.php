@@ -11,8 +11,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $a = post('accion');
     if ($a === 'crear') {
         $db->prepare("INSERT INTO ab_tests (nombre, tipo, variante_a_config, variante_b_config, usuario_id) VALUES (?,?,?,?,?)")
-            ->execute([trim(post('nombre')), post('tipo','email'), json_encode(['asunto'=>post('asunto_a'),'contenido'=>post('contenido_a')]),
-                json_encode(['asunto'=>post('asunto_b'),'contenido'=>post('contenido_b')]), currentUserId()]);
+            ->execute([trim(post('nombre')), post('tipo','email'), json_encode(['asunto'=>trim($_POST['asunto_a']??''),'contenido'=>trim($_POST['contenido_a']??'')]),
+                json_encode(['asunto'=>trim($_POST['asunto_b']??''),'contenido'=>trim($_POST['contenido_b']??'')]), currentUserId()]);
         setFlash('success','Test creado.');
         header('Location: index.php'); exit;
     }

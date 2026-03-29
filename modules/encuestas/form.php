@@ -13,7 +13,7 @@ if (!$enc) { setFlash('danger','No encontrada.'); header('Location: index.php');
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
     $db->prepare("UPDATE encuestas SET nombre=?, descripcion=?, preguntas=?, color_primario=?, crear_cliente=? WHERE id=?")
-        ->execute([trim(post('nombre')), trim(post('descripcion')), post('preguntas_json','[]'), post('color_primario','#10b981'), intval(post('crear_cliente')), $id]);
+        ->execute([trim(post('nombre')), trim(post('descripcion')), $_POST['preguntas_json'] ?? '[]', post('color_primario','#10b981'), intval(post('crear_cliente')), $id]);
     setFlash('success','Encuesta guardada.');
     header('Location: form.php?id='.$id); exit;
 }

@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $cliente = $db->prepare("SELECT * FROM clientes WHERE id=?"); $cliente->execute([$clienteId]); $cliente=$cliente->fetch();
             if ($canal === 'email' && $cliente['email']) {
                 $headers = "MIME-Version: 1.0\r\nContent-type: text/html; charset=UTF-8\r\n";
-                @mail($cliente['email'], $asunto ?: 'Mensaje', nl2br(htmlspecialchars($mensaje)), $headers);
+                @mail($cliente['email'], str_replace(["\r","\n"], '', $asunto ?: 'Mensaje'), nl2br(htmlspecialchars($mensaje)), $headers);
             }
             setFlash('success', 'Conversacion iniciada.');
             header('Location: index.php?conv='.$convId); exit;
@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $conv->execute([$convId]); $conv=$conv->fetch();
             if ($conv['canal'] === 'email' && $conv['email']) {
                 $headers = "MIME-Version: 1.0\r\nContent-type: text/html; charset=UTF-8\r\n";
-                @mail($conv['email'], 'Re: '.($conv['asunto']?:'Mensaje'), nl2br(htmlspecialchars($mensaje)), $headers);
+                @mail($conv['email'], str_replace(["\r","\n"], '', 'Re: '.($conv['asunto']?:'Mensaje')), nl2br(htmlspecialchars($mensaje)), $headers);
             } elseif ($conv['canal'] === 'sms' && $conv['telefono']) {
                 $smsConfig = $db->query("SELECT * FROM sms_config WHERE activo=1 LIMIT 1")->fetch();
                 if ($smsConfig && $smsConfig['proveedor'] === 'twilio') {
@@ -164,7 +164,7 @@ $clientes = $db->query("SELECT id, nombre, apellidos, email, telefono FROM clien
                 <div>
                     <i class="bi <?= $canalIcons[$activeConv['canal']]??'bi-chat' ?>"></i>
                     <strong><?= sanitize(($activeConv['cli_nombre']??'').' '.($activeConv['cli_apellidos']??'')) ?></strong>
-                    <small class="text-muted ms-2"><?= $activeConv['cli_email'] ?? $activeConv['cli_telefono'] ?? '' ?></small>
+                    <small class="text-muted ms-2"><?= sanitize($activeConv['cli_email'] ?? $activeConv['cli_telefono'] ?? '') ?></small>
                     <?php if ($activeConv['asunto']): ?><br><small class="text-muted"><?= sanitize($activeConv['asunto']) ?></small><?php endif; ?>
                 </div>
                 <div class="d-flex gap-1">
