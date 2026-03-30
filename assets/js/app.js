@@ -1,14 +1,38 @@
 /**
- * InmoCRM España - JavaScript principal
+ * InmoCRM Espana - JavaScript principal
  */
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Sidebar toggle para movil
+    // ========= DARK MODE TOGGLE =========
+    const themeToggle = document.getElementById('themeToggle');
+    const themeIcon = document.getElementById('themeIcon');
+
+    function setTheme(theme) {
+        document.documentElement.setAttribute('data-bs-theme', theme);
+        localStorage.setItem('theme', theme);
+        if (themeIcon) {
+            themeIcon.className = theme === 'dark' ? 'bi bi-sun fs-5' : 'bi bi-moon-stars fs-5';
+        }
+    }
+
+    // Initialize icon based on current theme
+    const currentTheme = document.documentElement.getAttribute('data-bs-theme') || 'light';
+    if (themeIcon) {
+        themeIcon.className = currentTheme === 'dark' ? 'bi bi-sun fs-5' : 'bi bi-moon-stars fs-5';
+    }
+
+    if (themeToggle) {
+        themeToggle.addEventListener('click', function() {
+            const current = document.documentElement.getAttribute('data-bs-theme');
+            setTheme(current === 'dark' ? 'light' : 'dark');
+        });
+    }
+
+    // ========= SIDEBAR TOGGLE (mobile) =========
     const sidebarToggle = document.getElementById('sidebarToggle');
     const sidebar = document.getElementById('sidebar');
 
     if (sidebarToggle && sidebar) {
-        // Crear overlay
         const overlay = document.createElement('div');
         overlay.className = 'sidebar-overlay';
         document.body.appendChild(overlay);
@@ -24,7 +48,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Auto-cerrar alertas despues de 5 segundos
+    // ========= AUTO-CLOSE ALERTS =========
     const alerts = document.querySelectorAll('.alert-dismissible');
     alerts.forEach(function(alert) {
         setTimeout(function() {
@@ -33,7 +57,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 5000);
     });
 
-    // Confirmar eliminacion
+    // ========= CONFIRM DELETE =========
     document.querySelectorAll('[data-confirm]').forEach(function(el) {
         el.addEventListener('click', function(e) {
             if (!confirm(this.dataset.confirm || 'Estas seguro de que deseas eliminar este elemento?')) {
@@ -42,7 +66,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Preview de imagenes al seleccionar archivos
+    // ========= IMAGE PREVIEW =========
     const imageInputs = document.querySelectorAll('input[type="file"][data-preview]');
     imageInputs.forEach(function(input) {
         input.addEventListener('change', function() {
@@ -59,7 +83,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Formatear campos de precio al escribir
+    // ========= FORMAT PRICE INPUTS =========
     document.querySelectorAll('.format-precio').forEach(function(input) {
         input.addEventListener('blur', function() {
             let val = this.value.replace(/[^\d.,]/g, '').replace(',', '.');
@@ -69,7 +93,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Busqueda en tablas
+    // ========= TABLE SEARCH =========
     const searchInputs = document.querySelectorAll('[data-table-search]');
     searchInputs.forEach(function(input) {
         input.addEventListener('keyup', function() {
@@ -85,7 +109,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Tooltips de Bootstrap
+    // ========= TOOLTIPS =========
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     tooltipTriggerList.map(function(el) {
         return new bootstrap.Tooltip(el);
