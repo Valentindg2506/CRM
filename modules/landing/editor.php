@@ -26,8 +26,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $meta_desc = trim(post('meta_descripcion'));
     $color = post('color_primario','#10b981');
     $color_fondo = post('color_fondo','#ffffff');
-    $css = post('custom_css','');
-    $seccionesJson = post('secciones_json','[]');
+    $css = $_POST['custom_css'] ?? '';
+    $seccionesJson = $_POST['secciones_json'] ?? '[]';
 
     if (empty($titulo)) { setFlash('danger','Titulo obligatorio.'); }
     else {

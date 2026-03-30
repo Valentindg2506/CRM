@@ -16,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $slug = post('slug') ? trim(post('slug')) : preg_replace('/[^a-z0-9]+/','-',strtolower(preg_replace('/[áéíóúñü]/u', '', $titulo)));
     $slug = trim($slug, '-');
     $extracto = trim(post('extracto'));
-    $contenido = post('contenido');
+    $contenido = $_POST['contenido'] ?? '';
     $imagenDest = trim(post('imagen_destacada'));
     $categoria = trim(post('categoria'));
     $tags = trim(post('tags'));
@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $pageTitle = $id ? 'Editar Articulo' : 'Nuevo Articulo';
 require_once __DIR__ . '/../../includes/header.php';
-$propiedades = $db->query("SELECT id, titulo, referencia FROM propiedades WHERE activo=1 ORDER BY titulo")->fetchAll();
+$propiedades = $db->query("SELECT id, titulo, referencia FROM propiedades WHERE estado != 'retirado' ORDER BY titulo")->fetchAll();
 ?>
 
 <a href="index.php" class="btn btn-outline-secondary btn-sm mb-3"><i class="bi bi-arrow-left"></i> Volver</a>

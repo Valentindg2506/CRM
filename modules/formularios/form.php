@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email_notif = trim(post('email_notificacion'));
     $crear_cliente = post('crear_cliente') ? 1 : 0;
 
-    $camposJson = post('campos_json');
+    $camposJson = $_POST['campos_json'] ?? '[]';
     $camposArr = json_decode($camposJson, true);
 
     if (empty($nombre)) {

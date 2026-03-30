@@ -16,8 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $nombre = trim(post('nombre'));
         $descripcion = trim(post('descripcion'));
         $trigger_tipo = post('trigger_tipo', 'manual');
-        $nodos = post('nodos_json', '[]');
-        $conexiones = post('conexiones_json', '[]');
+        $nodos = $_POST['nodos_json'] ?? '[]';
+        $conexiones = $_POST['conexiones_json'] ?? '[]';
 
         if (empty($nombre)) { setFlash('danger', 'Nombre obligatorio.'); header('Location: workflows.php'); exit; }
 

@@ -125,7 +125,7 @@ if (isset($_GET['converted'])) {
 <div class="fixed-bottom bg-white border-top p-2">
     <div class="container">
         <div class="progress" style="height:6px">
-            <div class="progress-bar bg-success" style="width:<?= round($pasoNum/$totalPasos*100) ?>%"></div>
+            <div class="progress-bar bg-success" style="width:<?= $totalPasos > 0 ? round($pasoNum/$totalPasos*100) : 0 ?>%"></div>
         </div>
         <small class="text-muted">Paso <?= $pasoNum ?> de <?= $totalPasos ?></small>
     </div>

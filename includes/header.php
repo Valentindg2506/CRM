@@ -12,27 +12,101 @@ $stmtNotif = $db->prepare("SELECT COUNT(*) FROM notificaciones WHERE usuario_id 
 $stmtNotif->execute([currentUserId()]);
 $notifCount = $stmtNotif->fetchColumn();
 
+// Load whitelabel config (colors, branding)
+$_wl = null;
+try {
+    $_wl = $db->query("SELECT * FROM whitelabel_config WHERE id=1")->fetch();
+} catch (Exception $e) {}
+
+$_appName = $_wl['app_nombre'] ?? APP_NAME;
+$_colorPrimary = $_wl['color_primario'] ?? '#10b981';
+$_colorSecondary = $_wl['color_secundario'] ?? '#1e293b';
+$_colorAccent = $_wl['color_acento'] ?? '#f59e0b';
+$_logoUrl = $_wl['app_logo_url'] ?? '';
+$_faviconUrl = $_wl['app_favicon_url'] ?? '';
+$_customCss = $_wl['css_custom'] ?? '';
+
+// Compute color variants from primary
+function hexToHsl($hex) {
+    $hex = ltrim($hex, '#');
+    $r = hexdec(substr($hex,0,2))/255;
+    $g = hexdec(substr($hex,2,2))/255;
+    $b = hexdec(substr($hex,4,2))/255;
+    $max = max($r,$g,$b); $min = min($r,$g,$b);
+    $l = ($max+$min)/2;
+    if ($max == $min) { $h = $s = 0; }
+    else {
+        $d = $max - $min;
+        $s = $l > 0.5 ? $d/(2-$max-$min) : $d/($max+$min);
+        if ($max == $r) $h = ($g-$b)/$d + ($g < $b ? 6 : 0);
+        elseif ($max == $g) $h = ($b-$r)/$d + 2;
+        else $h = ($r-$g)/$d + 4;
+        $h /= 6;
+    }
+    return [round($h*360), round($s*100), round($l*100)];
+}
+
+list($ph, $ps, $pl) = hexToHsl($_colorPrimary);
+$_primaryDarkHex = $_colorPrimary; // fallback
+// Make a darker variant
+$pdl = max(0, $pl - 10);
+$_primaryLightRgba = "rgba(" . hexdec(substr($_colorPrimary,1,2)) . "," . hexdec(substr($_colorPrimary,3,2)) . "," . hexdec(substr($_colorPrimary,5,2)) . ",0.12)";
+
 // Determinar pagina activa
 $currentPage = basename($_SERVER['PHP_SELF'], '.php');
 $currentPath = $_SERVER['PHP_SELF'];
 $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/index.php' || !preg_match('/modules\//', $currentPath));
 ?>
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-bs-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= $pageTitle ?? 'InmoCRM' ?> - <?= APP_NAME ?></title>
+    <title><?= $pageTitle ?? 'InmoCRM' ?> - <?= htmlspecialchars($_appName) ?></title>
+    <?php if ($_faviconUrl): ?><link rel="icon" href="<?= htmlspecialchars($_faviconUrl) ?>"><?php endif; ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="<?= APP_URL ?>/assets/css/style.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: <?= htmlspecialchars($_colorPrimary) ?>;
+            --primary-dark: <?= htmlspecialchars($_colorPrimary) ?>;
+            --primary-light: <?= $_primaryLightRgba ?>;
+            --accent: <?= htmlspecialchars($_colorAccent) ?>;
+            --sidebar-active: <?= htmlspecialchars($_colorPrimary) ?>;
+            --sidebar-hover: rgba(<?= hexdec(substr($_colorPrimary,1,2)) ?>,<?= hexdec(substr($_colorPrimary,3,2)) ?>,<?= hexdec(substr($_colorPrimary,5,2)) ?>,0.08);
+        }
+        .btn-primary { background: var(--primary) !important; border-color: var(--primary) !important; }
+        .btn-primary:hover { filter: brightness(0.9); box-shadow: 0 4px 12px <?= $_primaryLightRgba ?>; }
+        .btn-outline-primary { color: var(--primary) !important; border-color: var(--primary) !important; }
+        .btn-outline-primary:hover { background: var(--primary) !important; border-color: var(--primary) !important; color: #fff !important; }
+        .badge.bg-primary { background: var(--primary) !important; }
+        .text-primary { color: var(--primary) !important; }
+        .form-control:focus, .form-select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px <?= $_primaryLightRgba ?>; }
+        a { color: var(--primary); }
+        a:hover { color: var(--primary); filter: brightness(0.85); }
+        <?= $_customCss ?>
+    </style>
+    <script>
+        // Dark mode: apply before render to prevent flash
+        (function(){
+            const t = localStorage.getItem('theme');
+            if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.setAttribute('data-bs-theme', 'dark');
+            }
+        })();
+    </script>
 </head>
 <body>
     <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <h4><i class="bi bi-buildings"></i> InmoCRM</h4>
+            <?php if ($_logoUrl): ?>
+                <img src="<?= htmlspecialchars($_logoUrl) ?>" alt="Logo" style="max-height:36px;margin-bottom:4px">
+            <?php else: ?>
+                <h4><i class="bi bi-buildings"></i> <?= htmlspecialchars($_appName) ?></h4>
+            <?php endif; ?>
             <small class="text-muted">CRM Inmobiliario</small>
         </div>
         <nav class="sidebar-nav">
@@ -171,15 +245,19 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
         <!-- Top Navbar -->
         <nav class="top-navbar">
             <div class="d-flex align-items-center">
-                <button class="btn btn-link text-dark me-3 d-lg-none" id="sidebarToggle">
+                <button class="btn btn-link me-3 d-lg-none" id="sidebarToggle">
                     <i class="bi bi-list fs-4"></i>
                 </button>
                 <h5 class="mb-0 page-title"><?= $pageTitle ?? 'Dashboard' ?></h5>
             </div>
-            <div class="d-flex align-items-center gap-3">
+            <div class="d-flex align-items-center gap-2">
+                <!-- Dark mode toggle -->
+                <button class="btn btn-link btn-sm" id="themeToggle" title="Cambiar tema">
+                    <i class="bi bi-moon-stars fs-5" id="themeIcon"></i>
+                </button>
                 <!-- Notificaciones -->
                 <div class="dropdown">
-                    <button class="btn btn-link text-dark position-relative" data-bs-toggle="dropdown">
+                    <button class="btn btn-link position-relative" data-bs-toggle="dropdown">
                         <i class="bi bi-bell fs-5"></i>
                         <?php if ($notifCount > 0): ?>
                         <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
@@ -207,7 +285,7 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
                 </div>
                 <!-- Usuario -->
                 <div class="dropdown">
-                    <button class="btn btn-link text-dark dropdown-toggle" data-bs-toggle="dropdown">
+                    <button class="btn btn-link dropdown-toggle" data-bs-toggle="dropdown">
                         <i class="bi bi-person-circle"></i> <?= sanitize(currentUserName()) ?>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">

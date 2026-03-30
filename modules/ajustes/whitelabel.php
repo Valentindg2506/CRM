@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             post('color_primario','#10b981'), post('color_secundario','#1e293b'), post('color_acento','#f59e0b'),
             trim(post('dominio_custom')), trim(post('email_remitente')), trim(post('footer_texto')),
             trim(post('login_titulo')), trim(post('login_subtitulo')), trim(post('login_fondo_url')),
-            post('css_custom'), intval(post('ocultar_powered_by'))]);
+            $_POST['css_custom'] ?? '', intval(post('ocultar_powered_by'))]);
     setFlash('success','Configuracion guardada.');
     header('Location: whitelabel.php'); exit;
 }

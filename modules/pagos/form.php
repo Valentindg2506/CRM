@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $fecha_vencimiento = post('fecha_vencimiento') ?: null;
     $notas = trim(post('notas'));
     $metodo_pago = post('metodo_pago', '');
-    $lineasJson = post('lineas_json');
+    $lineasJson = $_POST['lineas_json'] ?? '[]';
     $lineasArr = json_decode($lineasJson, true) ?: [];
 
     $subtotal = 0; $ivaTotal = 0;
