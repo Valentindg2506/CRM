@@ -67,7 +67,7 @@ $stats = $db->query("SELECT estado, COUNT(*) as total, SUM(total) as suma FROM p
 <div class="text-center text-muted py-5"><i class="bi bi-file-earmark-text fs-1 d-block mb-3"></i><h5>No hay presupuestos</h5></div>
 <?php else: ?>
 <div class="card border-0 shadow-sm">
-    <div class="table-responsive">
+    <div class="table-responsive" style="overflow: visible;">
         <table class="table table-hover mb-0">
             <thead class="table-light"><tr><th>Numero</th><th>Cliente</th><th>Titulo</th><th>Total</th><th>Estado</th><th>Fecha</th><th>Expira</th><th class="text-end">Acciones</th></tr></thead>
             <tbody>

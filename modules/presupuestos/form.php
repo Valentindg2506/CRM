@@ -92,7 +92,7 @@ $ivaDefault = $config['iva_defecto'] ?? 21;
     </div>
 
     <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-white d-flex justify-content-between"><h6 class="mb-0">Lineas</h6><button type="button" class="btn btn-sm btn-primary" onclick="addLinea()"><i class="bi bi-plus"></i></button></div>
+        <div class="card-header bg-white d-flex justify-content-between"><h6 class="mb-0">Lineas</h6><button type="button" class="btn btn-sm btn-primary" onclick="addLinea()"><i class="bi bi-plus"></i> Nueva linea</button></div>
         <div class="card-body">
             <table class="table table-sm" id="lineasTable">
                 <thead><tr><th>Descripcion</th><th style="width:80px">Cant.</th><th style="width:110px">Precio</th><th style="width:80px">IVA %</th><th style="width:100px">Total</th><th style="width:40px"></th></tr></thead>

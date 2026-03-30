@@ -114,9 +114,33 @@ $estadoClases = ['borrador'=>'secondary','enviada'=>'primary','pagada'=>'success
                     <td><small><?= formatFecha($f['fecha_emision']) ?></small></td>
                     <td><small><?= $f['fecha_vencimiento'] ? formatFecha($f['fecha_vencimiento']) : '-' ?></small></td>
                     <td class="text-end">
-                        <div class="btn-group btn-group-sm">
-                            <a href="ver.php?id=<?= $f['id'] ?>" class="btn btn-outline-primary"><i class="bi bi-eye"></i></a>
-                            <a href="form.php?id=<?= $f['id'] ?>" class="btn btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+                        <div class="d-flex gap-1 justify-content-end">
+                            <div class="btn-group btn-group-sm">
+                                <a href="ver.php?id=<?= $f['id'] ?>" class="btn btn-outline-primary"><i class="bi bi-eye"></i></a>
+                                <a href="form.php?id=<?= $f['id'] ?>" class="btn btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+                            </div>
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" title="Cambiar estado"><i class="bi bi-arrow-repeat"></i></button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <?php foreach ($estadoClases as $est => $cl): if ($est === $f['estado']) continue; ?>
+                                    <li>
+                                        <form method="POST" class="d-inline">
+                                            <?= csrfField() ?>
+                                            <input type="hidden" name="accion" value="cambiar_estado">
+                                            <input type="hidden" name="factura_id" value="<?= $f['id'] ?>">
+                                            <input type="hidden" name="nuevo_estado" value="<?= $est ?>">
+                                            <button class="dropdown-item"><span class="badge bg-<?= $cl ?> me-1">&nbsp;</span> <?= ucfirst($est) ?></button>
+                                        </form>
+                                    </li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </div>
+                            <form method="POST" class="d-inline" onsubmit="return confirm('¿Eliminar esta factura?')">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="accion" value="eliminar">
+                                <input type="hidden" name="factura_id" value="<?= $f['id'] ?>">
+                                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                            </form>
                         </div>
                     </td>
                 </tr>

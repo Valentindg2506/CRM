@@ -365,7 +365,8 @@ $convCierre = $visitasRealizadas > 0 ? round(($operacionesCerradas / $visitasRea
         </div>
     </div>
 
-    <!-- Actividad Reciente -->
+    <!-- Actividad Reciente (solo admin) -->
+    <?php if ($isAdm): ?>
     <div class="col-lg-5">
         <div class="card">
             <div class="card-header"><i class="bi bi-clock-history"></i> Actividad Reciente</div>
@@ -393,6 +394,7 @@ $convCierre = $visitasRealizadas > 0 ? round(($operacionesCerradas / $visitasRea
             </div>
         </div>
     </div>
+    <?php endif; ?>
 </div>
 
 <!-- Resumen por estado de propiedades -->

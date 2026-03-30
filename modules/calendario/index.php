@@ -46,6 +46,31 @@ $stmt = $db->prepare("
 $stmt->execute([currentUserId(), $fechaFin, $fechaInicio]);
 $eventos = $stmt->fetchAll();
 
+// También obtener visitas del módulo de visitas para mostrarlas en el calendario
+$stmtVisitasCal = $db->prepare("
+    SELECT v.id, v.fecha, v.hora, v.estado as visita_estado,
+           CONCAT('Visita: ', p.referencia, ' - ', c.nombre) as titulo,
+           'visita' as tipo, '#10b981' as color, 0 as todo_dia,
+           c.nombre as cliente_nombre, c.apellidos as cliente_apellidos,
+           p.titulo as propiedad_titulo, p.referencia as propiedad_ref,
+           v.cliente_id, v.propiedad_id
+    FROM visitas v
+    LEFT JOIN clientes c ON v.cliente_id = c.id
+    LEFT JOIN propiedades p ON v.propiedad_id = p.id
+    WHERE v.agente_id = ?
+      AND v.fecha >= ? AND v.fecha <= ?
+    ORDER BY v.fecha, v.hora ASC
+");
+$stmtVisitasCal->execute([currentUserId(), "$anio-" . str_pad($mes, 2, '0', STR_PAD_LEFT) . "-01", "$anio-" . str_pad($mes, 2, '0', STR_PAD_LEFT) . "-$diasEnMes"]);
+$visitas = $stmtVisitasCal->fetchAll();
+
+// Convertir visitas al formato de eventos
+foreach ($visitas as $v) {
+    $v['fecha_inicio'] = $v['fecha'] . ' ' . ($v['hora'] ?? '09:00:00');
+    $v['fecha_fin'] = $v['fecha'] . ' ' . ($v['hora'] ? date('H:i:s', strtotime($v['hora'] . ' +1 hour')) : '10:00:00');
+    $eventos[] = $v;
+}
+
 // Organizar eventos por dia
 $eventosPorDia = [];
 foreach ($eventos as $evento) {

@@ -183,9 +183,9 @@ function renderLineas() {
         iva += lineIva;
         body.innerHTML += `<tr>
             <td><input type="text" class="form-control form-control-sm" value="${l.descripcion||''}" onchange="lineas[${i}].descripcion=this.value"></td>
-            <td><input type="number" class="form-control form-control-sm" value="${cant}" min="1" step="0.01" onchange="lineas[${i}].cantidad=this.value;renderLineas()"></td>
-            <td><input type="number" class="form-control form-control-sm" value="${precio}" min="0" step="0.01" onchange="lineas[${i}].precio_unitario=this.value;renderLineas()"></td>
-            <td><input type="number" class="form-control form-control-sm" value="${ivaP}" min="0" step="0.01" onchange="lineas[${i}].iva=this.value;renderLineas()"></td>
+            <td><input type="number" class="form-control form-control-sm" value="${cant}" min="1" step="0.01" oninput="lineas[${i}].cantidad=this.value;renderLineas()"></td>
+            <td><input type="number" class="form-control form-control-sm" value="${precio}" min="0" step="0.01" oninput="lineas[${i}].precio_unitario=this.value;renderLineas()"></td>
+            <td><input type="number" class="form-control form-control-sm" value="${ivaP}" min="0" step="0.01" oninput="lineas[${i}].iva=this.value;renderLineas()"></td>
             <td class="fw-bold">${(lineTotal + lineIva).toFixed(2)} &euro;</td>
             <td><a href="#" class="text-danger" onclick="lineas.splice(${i},1);renderLineas();return false"><i class="bi bi-x-lg"></i></a></td>
         </tr>`;

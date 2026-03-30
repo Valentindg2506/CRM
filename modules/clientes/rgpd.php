@@ -90,9 +90,21 @@ $numPropiedades = getCount('propiedades', 'propietario_id = ?', [$id]);
 
                 <h5 class="mt-4">Datos almacenados de este cliente</h5>
                 <table class="table table-bordered">
+                    <thead class="table-light">
+                        <tr><th style="width:30%">Campo</th><th>Valor almacenado</th></tr>
+                    </thead>
                     <tbody>
-                        <tr><td><strong>Datos personales</strong></td><td>Nombre, apellidos, email, telefono, documento identidad, direccion</td></tr>
-                        <tr><td><strong>Preferencias de busqueda</strong></td><td>Tipo inmueble, presupuesto, zona, caracteristicas</td></tr>
+                        <tr><td><strong>Nombre</strong></td><td><?= sanitize($cliente['nombre'] ?? '') ?></td></tr>
+                        <tr><td><strong>Apellidos</strong></td><td><?= sanitize($cliente['apellidos'] ?? '') ?: '<span class="text-muted">—</span>' ?></td></tr>
+                        <tr><td><strong>Email</strong></td><td><?= sanitize($cliente['email'] ?? '') ?: '<span class="text-muted">—</span>' ?></td></tr>
+                        <tr><td><strong>Teléfono</strong></td><td><?= sanitize($cliente['telefono'] ?? '') ?: '<span class="text-muted">—</span>' ?></td></tr>
+                        <tr><td><strong>Teléfono 2</strong></td><td><?= sanitize($cliente['telefono2'] ?? '') ?: '<span class="text-muted">—</span>' ?></td></tr>
+                        <tr><td><strong>DNI/NIE/CIF</strong></td><td><?= sanitize($cliente['dni_nie_cif'] ?? '') ?: '<span class="text-muted">—</span>' ?></td></tr>
+                        <tr><td><strong>Dirección</strong></td><td><?= sanitize($cliente['direccion'] ?? '') ?: '<span class="text-muted">—</span>' ?></td></tr>
+                        <tr><td><strong>Código Postal</strong></td><td><?= sanitize($cliente['codigo_postal'] ?? '') ?: '<span class="text-muted">—</span>' ?></td></tr>
+                        <tr><td><strong>Localidad</strong></td><td><?= sanitize($cliente['localidad'] ?? '') ?: '<span class="text-muted">—</span>' ?></td></tr>
+                        <tr><td><strong>Provincia</strong></td><td><?= sanitize($cliente['provincia'] ?? '') ?: '<span class="text-muted">—</span>' ?></td></tr>
+                        <tr><td><strong>Notas</strong></td><td><?= sanitize($cliente['notas'] ?? '') ?: '<span class="text-muted">—</span>' ?></td></tr>
                         <tr><td><strong>Visitas registradas</strong></td><td><?= $numVisitas ?> visitas</td></tr>
                         <tr><td><strong>Documentos asociados</strong></td><td><?= $numDocs ?> documentos</td></tr>
                         <tr><td><strong>Registros financieros</strong></td><td><?= $numFinanzas ?> registros</td></tr>

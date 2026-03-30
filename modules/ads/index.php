@@ -16,8 +16,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: index.php'); exit;
     }
     if ($a === 'agregar_campana') {
+        $cuentaId = intval(post('cuenta_id')) ?: null;
         $db->prepare("INSERT INTO ads_campanas (cuenta_id, nombre, plataforma, presupuesto, gasto, impresiones, clicks, conversiones, fecha_inicio, fecha_fin) VALUES (?,?,?,?,?,?,?,?,?,?)")
-            ->execute([intval(post('cuenta_id')), trim(post('nombre')), post('plataforma'), floatval(post('presupuesto')), floatval(post('gasto')),
+            ->execute([$cuentaId, trim(post('nombre')), post('plataforma'), floatval(post('presupuesto')), floatval(post('gasto')),
                 intval(post('impresiones')), intval(post('clicks')), intval(post('conversiones')), post('fecha_inicio')?:null, post('fecha_fin')?:null]);
         setFlash('success','Campana agregada.');
         header('Location: index.php'); exit;

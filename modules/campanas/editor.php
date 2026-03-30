@@ -75,7 +75,7 @@ require_once __DIR__ . '/../../includes/header.php';
 $pasos = $db->prepare("SELECT * FROM campana_pasos WHERE campana_id=? ORDER BY orden"); $pasos->execute([$id]); $pasos=$pasos->fetchAll();
 $contactos = $db->prepare("SELECT cc.*, c.nombre, c.apellidos, c.email, c.telefono FROM campana_contactos cc LEFT JOIN clientes c ON cc.cliente_id=c.id WHERE cc.campana_id=? ORDER BY cc.created_at DESC LIMIT 50"); $contactos->execute([$id]); $contactos=$contactos->fetchAll();
 $tags = $db->query("SELECT * FROM tags ORDER BY nombre")->fetchAll();
-$plantillas = $db->query("SELECT id, nombre FROM email_plantillas WHERE activo=1 ORDER BY nombre")->fetchAll();
+$plantillas = $db->query("SELECT id, nombre FROM email_plantillas ORDER BY nombre")->fetchAll();
 
 $tipoIcons = ['email'=>'bi-envelope text-primary','sms'=>'bi-phone text-success','esperar'=>'bi-clock text-warning','condicion'=>'bi-signpost-split text-purple'];
 ?>

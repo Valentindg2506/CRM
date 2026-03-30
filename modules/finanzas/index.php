@@ -16,7 +16,7 @@ $isAdm = isAdmin();
 
 $filtroTipo = get('tipo');
 $filtroEstado = get('estado');
-$filtroMes = get('mes', date('Y-m'));
+$filtroMes = get('mes');
 $page = max(1, intval(get('page', 1)));
 
 $where = [];
