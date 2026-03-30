@@ -89,6 +89,38 @@ function exportarClientes($clientes) {
 }
 
 /**
+ * Exportar prospectos
+ */
+function exportarProspectos($prospectos) {
+    $headers = ['Referencia', 'Nombre', 'Telefono', 'Telefono 2', 'Email',
+        'Etapa', 'Estado', 'Tipo Propiedad', 'Direccion', 'Barrio', 'Localidad', 'Provincia', 'CP',
+        'Precio Estimado', 'Precio Propietario', 'Superficie m2', 'Habitaciones',
+        'Enlace', 'Fecha Contacto', 'Prox. Contacto', 'Comision %', 'Exclusividad',
+        'Agente', 'Notas', 'Reformas', 'Historial Contactos', 'Fecha Alta'];
+
+    $rows = [];
+    foreach ($prospectos as $p) {
+        $rows[] = [
+            $p['referencia'], $p['nombre'],
+            $p['telefono'] ?? '', $p['telefono2'] ?? '', $p['email'] ?? '',
+            $p['etapa'], $p['estado'],
+            $p['tipo_propiedad'] ?? '', $p['direccion'] ?? '', $p['barrio'] ?? '',
+            $p['localidad'] ?? '', $p['provincia'] ?? '', $p['codigo_postal'] ?? '',
+            $p['precio_estimado'] ?? '', $p['precio_propietario'] ?? '',
+            $p['superficie'] ?? '', $p['habitaciones'] ?? '',
+            $p['enlace'] ?? '', $p['fecha_contacto'] ?? '', $p['fecha_proximo_contacto'] ?? '',
+            $p['comision'] ?? '', $p['exclusividad'] ? 'Si' : 'No',
+            $p['agente_nombre'] ?? '',
+            strip_tags($p['notas'] ?? ''), strip_tags($p['reformas'] ?? ''),
+            strip_tags($p['historial_contactos'] ?? ''),
+            $p['created_at'] ?? '',
+        ];
+    }
+
+    exportCSV('prospectos_' . date('Y-m-d') . '.csv', $headers, $rows);
+}
+
+/**
  * Exportar visitas
  */
 function exportarVisitas($visitas) {

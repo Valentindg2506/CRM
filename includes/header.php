@@ -119,6 +119,9 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
             <a href="<?= APP_URL ?>/modules/clientes/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'clientes') !== false ? 'active' : '' ?>">
                 <i class="bi bi-people"></i> Clientes
             </a>
+            <a href="<?= APP_URL ?>/modules/prospectos/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'prospectos') !== false ? 'active' : '' ?>">
+                <i class="bi bi-person-plus"></i> Prospectos
+            </a>
             <a href="<?= APP_URL ?>/modules/visitas/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'visitas') !== false ? 'active' : '' ?>">
                 <i class="bi bi-calendar-event"></i> Visitas
             </a>

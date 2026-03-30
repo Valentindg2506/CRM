@@ -209,6 +209,12 @@
 [data-bs-theme="dark"] .badge-publicado { background: rgba(16,185,129,0.2); color: #6ee7b7; }
 [data-bs-theme="dark"] .badge-error { background: rgba(239,68,68,0.2); color: #fca5a5; }
 
+/* Prospectos dark mode */
+[data-bs-theme="dark"] .badge-nuevo { background: rgba(6,182,212,0.2); color: #67e8f9; }
+[data-bs-theme="dark"] .badge-en_proceso { background: rgba(59,130,246,0.2); color: #93c5fd; }
+[data-bs-theme="dark"] .badge-sin_interes { background: rgba(239,68,68,0.2); color: #fca5a5; }
+[data-bs-theme="dark"] .badge-captado { background: rgba(16,185,129,0.2); color: #6ee7b7; }
+
 [data-bs-theme="dark"] .nav-tabs .nav-link {
     color: var(--text-muted);
 }
@@ -540,6 +546,12 @@ body {
 
 .badge-publicado { background: #ecfdf5; color: #065f46; }
 .badge-error { background: #fef2f2; color: #991b1b; }
+
+/* Prospectos */
+.badge-nuevo { background: #f0f9ff; color: #0369a1; }
+.badge-en_proceso { background: #eff6ff; color: #1e40af; }
+.badge-sin_interes { background: #fef2f2; color: #991b1b; }
+.badge-captado { background: #ecfdf5; color: #065f46; }
 
 /* ========= PRIORIDAD ========= */
 .prioridad-baja { color: #10b981; }

@@ -227,3 +227,24 @@ function validarCliente($data) {
     }
     return $errors;
 }
+
+/**
+ * Validar formulario de prospecto
+ */
+function validarProspecto($data) {
+    $errors = [];
+    if (empty($data['nombre'])) $errors[] = 'El nombre es obligatorio.';
+    if (!empty($data['email']) && !validarEmail($data['email'])) {
+        $errors[] = 'El email no es valido.';
+    }
+    if (!empty($data['telefono']) && !validarTelefono($data['telefono'])) {
+        $errors[] = 'El telefono no es valido. Formato: 612345678 o +34612345678.';
+    }
+    if (!empty($data['telefono2']) && !validarTelefono($data['telefono2'])) {
+        $errors[] = 'El telefono secundario no es valido.';
+    }
+    if (!empty($data['codigo_postal']) && !validarCodigoPostal($data['codigo_postal'])) {
+        $errors[] = 'El codigo postal no es valido.';
+    }
+    return $errors;
+}
