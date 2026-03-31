@@ -5,172 +5,584 @@ require_once __DIR__ . '/includes/header.php';
 $db = getDB();
 $userId = currentUserId();
 $isAdm = isAdmin();
+$userName = currentUserName();
 
-// KPIs principales
-$totalPropiedades = getCount('propiedades', $isAdm ? '1=1' : 'agente_id = ?', $isAdm ? [] : [$userId]);
-$propDisponibles = getCount('propiedades', $isAdm ? 'estado = "disponible"' : 'estado = "disponible" AND agente_id = ?', $isAdm ? [] : [$userId]);
-$totalClientes = getCount('clientes', $isAdm ? '1=1' : 'agente_id = ?', $isAdm ? [] : [$userId]);
-$visitasHoy = getCount('visitas', $isAdm ? 'fecha = CURDATE()' : 'fecha = CURDATE() AND agente_id = ?', $isAdm ? [] : [$userId]);
+// ═══════════════════════════════════════════
+// KPIs PRINCIPALES
+// ═══════════════════════════════════════════
+
+// Prospectos Activos (captación) - no descartados ni captados
+$prospActivos = getCount('prospectos', $isAdm ? "etapa NOT IN ('descartado','captado') AND activo = 1" : "etapa NOT IN ('descartado','captado') AND activo = 1 AND agente_id = ?", $isAdm ? [] : [$userId]);
+
+// Propiedades en Cartera
+$propCartera = getCount('propiedades', $isAdm ? "estado = 'disponible'" : "estado = 'disponible' AND agente_id = ?", $isAdm ? [] : [$userId]);
+
+// Clientes Activos
+$clientesActivos = getCount('clientes', $isAdm ? 'activo = 1' : 'activo = 1 AND agente_id = ?', $isAdm ? [] : [$userId]);
+
+// Visitas este mes
 $visitasMes = getCount('visitas', $isAdm ? 'MONTH(fecha) = MONTH(CURDATE()) AND YEAR(fecha) = YEAR(CURDATE())' : 'MONTH(fecha) = MONTH(CURDATE()) AND YEAR(fecha) = YEAR(CURDATE()) AND agente_id = ?', $isAdm ? [] : [$userId]);
-$tareasPendientes = getCount('tareas', $isAdm ? 'estado IN ("pendiente","en_progreso")' : 'estado IN ("pendiente","en_progreso") AND asignado_a = ?', $isAdm ? [] : [$userId]);
-$tareasVencidas = getCount('tareas', $isAdm ? 'estado = "pendiente" AND fecha_vencimiento < NOW()' : 'estado = "pendiente" AND fecha_vencimiento < NOW() AND asignado_a = ?', $isAdm ? [] : [$userId]);
+$visitasHoy = getCount('visitas', $isAdm ? 'fecha = CURDATE()' : 'fecha = CURDATE() AND agente_id = ?', $isAdm ? [] : [$userId]);
 
-// Finanzas del mes
+// ═══════════════════════════════════════════
+// GANANCIA POTENCIAL TOTAL EN CARTERA
+// ═══════════════════════════════════════════
+$stmtGanancia = $db->prepare("
+    SELECT COALESCE(SUM(
+        CASE WHEN p.precio_estimado IS NOT NULL AND p.comision IS NOT NULL 
+        THEN p.precio_estimado * p.comision / 100 
+        ELSE 0 END
+    ), 0) as ganancia_potencial
+    FROM prospectos p 
+    WHERE p.etapa NOT IN ('descartado') AND p.activo = 1" .
+    ($isAdm ? '' : ' AND p.agente_id = ?'));
+$stmtGanancia->execute($isAdm ? [] : [$userId]);
+$gananciaPotencial = $stmtGanancia->fetch()['ganancia_potencial'];
+
+// Ganancia por propiedades en cartera
+$stmtGananciaCartera = $db->prepare("
+    SELECT COALESCE(SUM(p.precio * 0.05), 0) as ganancia_cartera
+    FROM propiedades p 
+    WHERE p.estado IN ('disponible','reservado')" .
+    ($isAdm ? '' : ' AND p.agente_id = ?'));
+$stmtGananciaCartera->execute($isAdm ? [] : [$userId]);
+$gananciaCartera = $stmtGananciaCartera->fetch()['ganancia_cartera'];
+
+$gananciaTotalPotencial = $gananciaPotencial + $gananciaCartera;
+
+// Captados este mes
+$stmtCaptados = $db->prepare("
+    SELECT COUNT(*) as captados_mes
+    FROM prospectos
+    WHERE etapa = 'captado' AND MONTH(updated_at) = MONTH(CURDATE()) AND YEAR(updated_at) = YEAR(CURDATE())" .
+    ($isAdm ? '' : ' AND agente_id = ?'));
+$stmtCaptados->execute($isAdm ? [] : [$userId]);
+$captadosMes = $stmtCaptados->fetch()['captados_mes'];
+
+// ═══════════════════════════════════════════
+// COMISIONES / PENDIENTE / % COBRADO
+// ═══════════════════════════════════════════
 $stmtFin = $db->prepare("SELECT
-    COALESCE(SUM(CASE WHEN estado = 'cobrado' AND MONTH(fecha) = MONTH(CURDATE()) AND YEAR(fecha) = YEAR(CURDATE()) THEN importe_total ELSE 0 END), 0) as cobrado_mes,
-    COALESCE(SUM(CASE WHEN estado = 'pendiente' THEN importe_total ELSE 0 END), 0) as pendiente_total
+    COALESCE(SUM(CASE WHEN estado = 'cobrado' THEN importe_total ELSE 0 END), 0) as comisiones_cobradas,
+    COALESCE(SUM(CASE WHEN estado = 'pendiente' THEN importe_total ELSE 0 END), 0) as pendiente_cobro,
+    COALESCE(SUM(importe_total), 0) as total_general
     FROM finanzas WHERE tipo IN ('comision_venta','comision_alquiler','honorarios')" .
     ($isAdm ? '' : ' AND agente_id = ?'));
 $stmtFin->execute($isAdm ? [] : [$userId]);
 $finanzas = $stmtFin->fetch();
+$pctCobrado = ($gananciaTotalPotencial > 0) ? round(($finanzas['comisiones_cobradas'] / $gananciaTotalPotencial) * 100, 1) : 0;
 
-// Propiedades por estado
-$stmtEstados = $db->query("SELECT estado, COUNT(*) as total FROM propiedades GROUP BY estado");
-$estadosProp = $stmtEstados->fetchAll(PDO::FETCH_KEY_PAIR);
+// ═══════════════════════════════════════════
+// PIPELINE CAPTACIÓN (prospectos por etapa)
+// ═══════════════════════════════════════════
+$stmtPipeCapt = $db->prepare("SELECT etapa, COUNT(*) as total FROM prospectos WHERE activo = 1" .
+    ($isAdm ? '' : ' AND agente_id = ?') . " GROUP BY etapa ORDER BY FIELD(etapa, 'nuevo_lead','contactado','seguimiento','visita_programada','en_negociacion','captado','descartado')");
+$stmtPipeCapt->execute($isAdm ? [] : [$userId]);
+$pipelineCaptacion = $stmtPipeCapt->fetchAll(PDO::FETCH_KEY_PAIR);
 
-// Ultimas propiedades
-$stmtUltProp = $db->prepare("SELECT p.*, u.nombre as agente_nombre FROM propiedades p LEFT JOIN usuarios u ON p.agente_id = u.id ORDER BY p.created_at DESC LIMIT 5");
-$stmtUltProp->execute();
-$ultimasPropiedades = $stmtUltProp->fetchAll();
+$etapasLabels = [
+    'nuevo_lead' => 'Nuevo Lead',
+    'contactado' => '1er Contacto',
+    'seguimiento' => 'Seguimiento',
+    'visita_programada' => 'Visita',
+    'en_negociacion' => 'Negociando',
+    'captado' => 'Captado',
+    'descartado' => 'Descartado',
+];
 
-// Proximas visitas
-$stmtVisitas = $db->prepare("SELECT v.*, p.titulo as propiedad, p.referencia, c.nombre as cliente_nombre, c.apellidos as cliente_apellidos
-    FROM visitas v
-    JOIN propiedades p ON v.propiedad_id = p.id
-    JOIN clientes c ON v.cliente_id = c.id
-    WHERE v.fecha >= CURDATE() AND v.estado = 'programada'" .
-    ($isAdm ? '' : ' AND v.agente_id = ?') .
-    " ORDER BY v.fecha, v.hora LIMIT 5");
-$stmtVisitas->execute($isAdm ? [] : [$userId]);
-$proximasVisitas = $stmtVisitas->fetchAll();
+// ═══════════════════════════════════════════
+// CARTERA — ETAPAS (propiedades por estado)
+// ═══════════════════════════════════════════
+$stmtCartera = $db->query("SELECT estado, COUNT(*) as total FROM propiedades GROUP BY estado");
+$carteraEtapas = $stmtCartera->fetchAll(PDO::FETCH_KEY_PAIR);
 
-// Tareas urgentes
-$stmtTareas = $db->prepare("SELECT t.*, p.referencia as prop_ref, c.nombre as cliente_nombre
-    FROM tareas t
-    LEFT JOIN propiedades p ON t.propiedad_id = p.id
-    LEFT JOIN clientes c ON t.cliente_id = c.id
-    WHERE t.estado IN ('pendiente','en_progreso')" .
-    ($isAdm ? '' : ' AND t.asignado_a = ?') .
-    " ORDER BY FIELD(t.prioridad, 'urgente','alta','media','baja'), t.fecha_vencimiento ASC LIMIT 5");
-$stmtTareas->execute($isAdm ? [] : [$userId]);
-$tareasUrgentes = $stmtTareas->fetchAll();
+$carteraLabels = [
+    'disponible' => 'Disponible',
+    'reservado' => 'Reservado',
+    'vendido' => 'Vendido',
+    'alquilado' => 'Alquilado',
+    'retirado' => 'Retirado',
+];
 
-// Actividad reciente
-$stmtAct = $db->prepare("SELECT a.*, u.nombre as usuario_nombre FROM actividad_log a LEFT JOIN usuarios u ON a.usuario_id = u.id ORDER BY a.created_at DESC LIMIT 8");
-$stmtAct->execute();
-$actividadReciente = $stmtAct->fetchAll();
+// ═══════════════════════════════════════════
+// TASAS DE CONVERSIÓN
+// ═══════════════════════════════════════════
+$totalContactados = ($pipelineCaptacion['nuevo_lead'] ?? 0) + ($pipelineCaptacion['contactado'] ?? 0) + ($pipelineCaptacion['seguimiento'] ?? 0) + ($pipelineCaptacion['visita_programada'] ?? 0) + ($pipelineCaptacion['en_negociacion'] ?? 0) + ($pipelineCaptacion['captado'] ?? 0);
+$totalVisitas = ($pipelineCaptacion['visita_programada'] ?? 0) + ($pipelineCaptacion['en_negociacion'] ?? 0) + ($pipelineCaptacion['captado'] ?? 0);
+$totalCaptados = $pipelineCaptacion['captado'] ?? 0;
 
-// Chart data: Visitas por Mes (last 6 months)
-$stmtVisitasMes = $db->query("SELECT DATE_FORMAT(fecha, '%Y-%m') as mes, COUNT(*) as total FROM visitas WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH) GROUP BY mes ORDER BY mes");
-$visitasPorMes = $stmtVisitasMes->fetchAll();
-$chartVisitasLabels = array_column($visitasPorMes, 'mes');
-$chartVisitasData = array_column($visitasPorMes, 'total');
+$convContactoVisita = $totalContactados > 0 ? round(($totalVisitas / $totalContactados) * 100) : 0;
+$convVisitaCaptado = $totalVisitas > 0 ? round(($totalCaptados / $totalVisitas) * 100) : 0;
 
-// Chart data: Propiedades por Tipo
-$stmtPropTipo = $db->query("SELECT tipo, COUNT(*) as total FROM propiedades GROUP BY tipo");
-$propPorTipo = $stmtPropTipo->fetchAll();
-$chartTipoLabels = array_column($propPorTipo, 'tipo');
-$chartTipoData = array_column($propPorTipo, 'total');
+// ═══════════════════════════════════════════
+// CONTACTAR HOY — Top 50 Prospectos por Urgencia
+// ═══════════════════════════════════════════
+$stmtContactarHoy = $db->prepare("
+    SELECT p.id, p.nombre, p.telefono, p.etapa, p.temperatura, p.fecha_proximo_contacto,
+           DATEDIFF(CURDATE(), COALESCE(p.fecha_proximo_contacto, p.updated_at)) as dias_sin_contacto,
+           p.referencia
+    FROM prospectos p 
+    WHERE p.activo = 1 AND p.etapa NOT IN ('captado','descartado')
+    " . ($isAdm ? '' : ' AND p.agente_id = ?') . "
+    ORDER BY 
+        CASE WHEN p.fecha_proximo_contacto <= CURDATE() THEN 0 ELSE 1 END,
+        dias_sin_contacto DESC
+    LIMIT 50");
+$stmtContactarHoy->execute($isAdm ? [] : [$userId]);
+$prospectosList = $stmtContactarHoy->fetchAll();
 
-// Conversion funnel data
-$totalLeads = getCount('clientes', '1=1');
-$visitasRealizadas = getCount('visitas', "estado = 'realizada'");
-$operacionesCerradas = getCount('propiedades', "estado IN ('vendido','alquilado')");
-$convVisitas = $totalLeads > 0 ? round(($visitasRealizadas / $totalLeads) * 100) : 0;
-$convCierre = $visitasRealizadas > 0 ? round(($operacionesCerradas / $visitasRealizadas) * 100) : 0;
+// ═══════════════════════════════════════════
+// CLIENTES A CONTACTAR HOY
+// ═══════════════════════════════════════════
+$stmtClientesHoy = $db->prepare("
+    SELECT c.id, c.nombre, c.apellidos, c.telefono, c.tipo, c.updated_at,
+           t.titulo as proxima_accion, t.fecha_vencimiento,
+           DATEDIFF(CURDATE(), c.updated_at) as dias_sin_contacto
+    FROM clientes c
+    LEFT JOIN tareas t ON t.cliente_id = c.id AND t.estado IN ('pendiente','en_progreso')
+    WHERE c.activo = 1
+    " . ($isAdm ? '' : ' AND c.agente_id = ?') . "
+    AND (t.fecha_vencimiento <= CURDATE() OR t.fecha_vencimiento IS NULL)
+    GROUP BY c.id
+    ORDER BY dias_sin_contacto DESC
+    LIMIT 20");
+$stmtClientesHoy->execute($isAdm ? [] : [$userId]);
+$clientesList = $stmtClientesHoy->fetchAll();
+
+// Tareas vencidas / pendientes
+$tareasPendientes = getCount('tareas', $isAdm ? 'estado IN ("pendiente","en_progreso")' : 'estado IN ("pendiente","en_progreso") AND asignado_a = ?', $isAdm ? [] : [$userId]);
+$tareasVencidas = getCount('tareas', $isAdm ? 'estado = "pendiente" AND fecha_vencimiento < NOW()' : 'estado = "pendiente" AND fecha_vencimiento < NOW() AND asignado_a = ?', $isAdm ? [] : [$userId]);
+
+$etapaColors = [
+    'nuevo_lead' => '#06b6d4',
+    'contactado' => '#64748b',
+    'seguimiento' => '#3b82f6',
+    'visita_programada' => '#8b5cf6',
+    'en_negociacion' => '#f59e0b',
+    'captado' => '#10b981',
+    'descartado' => '#ef4444',
+];
+
+$tempLabels = ['frio' => 'Frío', 'templado' => 'Templado', 'caliente' => 'Caliente'];
+$tempColors = ['frio' => '#3b82f6', 'templado' => '#f59e0b', 'caliente' => '#ef4444'];
 ?>
 
-<!-- KPI Cards -->
-<div class="row g-3 mb-4">
+<style>
+    /* Dashboard Premium Styles */
+    .dash-header {
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        border-radius: 12px;
+        padding: 20px 24px;
+        margin-bottom: 20px;
+        color: #fff;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .dash-header h4 {
+        margin: 0;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+    }
+
+    .dash-header small {
+        color: #94a3b8;
+    }
+
+    .dash-header .date-badge {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 4px 12px;
+        border-radius: 8px;
+        font-size: 0.85rem;
+    }
+
+    .kpi-card {
+        border-radius: 10px;
+        padding: 16px 20px;
+        color: #fff;
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.2s, box-shadow 0.2s;
+        cursor: default;
+    }
+
+    .kpi-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    }
+
+    .kpi-card .kpi-value {
+        font-size: 2rem;
+        font-weight: 800;
+        line-height: 1;
+    }
+
+    .kpi-card .kpi-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        opacity: 0.9;
+        margin-top: 4px;
+    }
+
+    .kpi-card .kpi-icon {
+        position: absolute;
+        right: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 2.5rem;
+        opacity: 0.15;
+    }
+
+    .metric-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .metric-box {
+        background: var(--bs-body-bg, #fff);
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 10px;
+        padding: 14px 18px;
+        text-align: center;
+    }
+
+    .metric-box .metric-value {
+        font-size: 1.4rem;
+        font-weight: 700;
+    }
+
+    .metric-box .metric-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #64748b;
+        margin-top: 2px;
+    }
+
+    .pipeline-table {
+        width: 100%;
+        font-size: 0.8rem;
+    }
+
+    .pipeline-table td,
+    .pipeline-table th {
+        padding: 6px 10px;
+    }
+
+    .pipeline-table th {
+        background: #f1f5f9;
+        font-weight: 600;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    [data-bs-theme="dark"] .pipeline-table th {
+        background: #1e293b;
+    }
+
+    .pipeline-table tr:hover td {
+        background: rgba(16, 185, 129, 0.04);
+    }
+
+    .prospect-table {
+        width: 100%;
+        font-size: 0.78rem;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    .prospect-table th {
+        background: #0f172a;
+        color: #fff;
+        padding: 8px 10px;
+        font-weight: 600;
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+
+    .prospect-table td {
+        padding: 6px 10px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+        vertical-align: middle;
+    }
+
+    .prospect-table tbody tr:hover {
+        background: rgba(16, 185, 129, 0.06);
+    }
+
+    .prospect-table .row-danger {
+        background: rgba(239, 68, 68, 0.08);
+    }
+
+    .prospect-table .row-warning {
+        background: rgba(245, 158, 11, 0.06);
+    }
+
+    .prospect-table .row-muted {
+        background: rgba(100, 116, 139, 0.05);
+        color: #94a3b8;
+    }
+
+    .temp-badge {
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.68rem;
+        font-weight: 600;
+    }
+
+    .section-title {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        padding: 8px 14px;
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .scroll-table {
+        max-height: 500px;
+        overflow-y: auto;
+        border-radius: 8px;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+    }
+</style>
+
+
+<!-- KPIs Principales -->
+<div class="row g-3 mb-3">
     <div class="col-6 col-lg-3">
-        <div class="stat-card">
-            <div class="d-flex justify-content-between align-items-start">
-                <div>
-                    <div class="stat-value"><?= $totalPropiedades ?></div>
-                    <div class="stat-label">Propiedades</div>
-                </div>
-                <div class="stat-icon bg-primary bg-opacity-10 text-primary"><i class="bi bi-house-door"></i></div>
-            </div>
-            <small class="text-success"><?= $propDisponibles ?> disponibles</small>
+        <div class="kpi-card" style="background: linear-gradient(135deg, #1e40af, #3b82f6);">
+            <div class="kpi-value"><?= $prospActivos ?></div>
+            <div class="kpi-label">Prospectos Activos<br><small>(captación)</small></div>
+            <i class="bi bi-person-plus kpi-icon"></i>
         </div>
     </div>
     <div class="col-6 col-lg-3">
-        <div class="stat-card">
-            <div class="d-flex justify-content-between align-items-start">
-                <div>
-                    <div class="stat-value"><?= $totalClientes ?></div>
-                    <div class="stat-label">Clientes</div>
-                </div>
-                <div class="stat-icon bg-success bg-opacity-10 text-success"><i class="bi bi-people"></i></div>
-            </div>
+        <div class="kpi-card" style="background: linear-gradient(135deg, #047857, #10b981);">
+            <div class="kpi-value"><?= $propCartera ?></div>
+            <div class="kpi-label">Propiedades<br><small>en cartera</small></div>
+            <i class="bi bi-house-door kpi-icon"></i>
         </div>
     </div>
     <div class="col-6 col-lg-3">
-        <div class="stat-card">
-            <div class="d-flex justify-content-between align-items-start">
-                <div>
-                    <div class="stat-value"><?= $visitasMes ?></div>
-                    <div class="stat-label">Visitas este mes</div>
-                </div>
-                <div class="stat-icon bg-info bg-opacity-10 text-info"><i class="bi bi-calendar-event"></i></div>
-            </div>
-            <small class="text-primary"><?= $visitasHoy ?> hoy</small>
+        <div class="kpi-card" style="background: linear-gradient(135deg, #b45309, #f59e0b);">
+            <div class="kpi-value"><?= $clientesActivos ?></div>
+            <div class="kpi-label">Clientes<br><small>activos</small></div>
+            <i class="bi bi-people kpi-icon"></i>
         </div>
     </div>
     <div class="col-6 col-lg-3">
-        <div class="stat-card">
-            <div class="d-flex justify-content-between align-items-start">
-                <div>
-                    <div class="stat-value"><?= $tareasPendientes ?></div>
-                    <div class="stat-label">Tareas pendientes</div>
-                </div>
-                <div class="stat-icon bg-warning bg-opacity-10 text-warning"><i class="bi bi-check2-square"></i></div>
-            </div>
-            <?php if ($tareasVencidas > 0): ?>
-            <small class="text-danger"><i class="bi bi-exclamation-triangle"></i> <?= $tareasVencidas ?> vencidas</small>
-            <?php endif; ?>
+        <div class="kpi-card" style="background: linear-gradient(135deg, #7c3aed, #a78bfa);">
+            <div class="kpi-value"><?= $visitasMes ?></div>
+            <div class="kpi-label">Visitas este mes<br><small><?= $visitasHoy ?> hoy</small></div>
+            <i class="bi bi-calendar-event kpi-icon"></i>
         </div>
     </div>
 </div>
 
-<!-- Finanzas resumen -->
-<div class="row g-3 mb-4">
-    <div class="col-md-6">
-        <div class="stat-card">
-            <div class="d-flex justify-content-between align-items-start">
-                <div>
-                    <div class="stat-value text-success"><?= formatPrecio($finanzas['cobrado_mes']) ?></div>
-                    <div class="stat-label">Cobrado este mes</div>
-                </div>
-                <div class="stat-icon bg-success bg-opacity-10 text-success"><i class="bi bi-cash-stack"></i></div>
-            </div>
+<!-- Ganancia Potencial -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <div class="text-center mb-2">
+            <span class="section-title" style="background: #fef3c720; color: #b45309;">
+                <i class="bi bi-piggy-bank"></i> GANANCIA POTENCIAL TOTAL EN CARTERA
+            </span>
         </div>
-    </div>
-    <div class="col-md-6">
-        <div class="stat-card">
-            <div class="d-flex justify-content-between align-items-start">
-                <div>
-                    <div class="stat-value text-warning"><?= formatPrecio($finanzas['pendiente_total']) ?></div>
-                    <div class="stat-label">Pendiente de cobro</div>
-                </div>
-                <div class="stat-icon bg-warning bg-opacity-10 text-warning"><i class="bi bi-hourglass-split"></i></div>
+        <div class="metric-row" style="grid-template-columns: repeat(4, 1fr);">
+            <div class="metric-box">
+                <div class="metric-value text-success"><?= formatPrecio($gananciaPotencial) ?></div>
+                <div class="metric-label">Prospectos</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-value text-primary"><?= formatPrecio($gananciaCartera) ?></div>
+                <div class="metric-label">Cartera</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-value" style="color: #7c3aed;"><?= $captadosMes ?></div>
+                <div class="metric-label">Captados este mes</div>
+            </div>
+            <div class="metric-box"
+                style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-color: #10b981;">
+                <div class="metric-value" style="color: #047857;"><?= formatPrecio($gananciaTotalPotencial) ?></div>
+                <div class="metric-label fw-bold">Total Potencial</div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Acciones rapidas -->
-<div class="row g-3 mb-4">
+<!-- Comisiones, Pendiente, % -->
+<div class="row g-3 mb-3">
+    <div class="col-md-4">
+        <div class="metric-box" style="background: #f0fdf4; border-color: #10b981;">
+            <div class="d-flex align-items-center justify-content-center gap-2 mb-1">
+                <i class="bi bi-check-circle text-success"></i>
+                <span class="metric-label mb-0">COMISIONES COBRADAS</span>
+            </div>
+            <div class="metric-value text-success"><?= formatPrecio($finanzas['comisiones_cobradas']) ?></div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="metric-box" style="background: #fef3c7; border-color: #f59e0b;">
+            <div class="d-flex align-items-center justify-content-center gap-2 mb-1">
+                <i class="bi bi-hourglass-split text-warning"></i>
+                <span class="metric-label mb-0">PENDIENTE DE COBRO</span>
+            </div>
+            <div class="metric-value text-warning"><?= formatPrecio($finanzas['pendiente_cobro']) ?></div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="metric-box" style="background: #ede9fe; border-color: #8b5cf6;">
+            <div class="d-flex align-items-center justify-content-center gap-2 mb-1">
+                <i class="bi bi-percent text-purple"></i>
+                <span class="metric-label mb-0">% DEL POTENCIAL COBRADO</span>
+            </div>
+            <div class="metric-value" style="color: #7c3aed;"><?= $pctCobrado ?>%</div>
+        </div>
+    </div>
+</div>
+
+<!-- Pipelines Row -->
+<div class="row g-3 mb-3">
+    <!-- Captación Pipeline -->
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header py-2">
+                <span class="section-title" style="background: #dbeafe; color: #1e40af; font-size: 0.68rem;">
+                    <i class="bi bi-funnel"></i> CAPTACIÓN — PIPELINE
+                </span>
+            </div>
+            <div class="card-body p-0">
+                <table class="pipeline-table">
+                    <thead>
+                        <tr>
+                            <th>Etapa</th>
+                            <th class="text-end">Nº</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($etapasLabels as $eKey => $eLabel): ?>
+                            <tr>
+                                <td>
+                                    <span
+                                        style="display:inline-block; width:8px; height:8px; border-radius:50%; background:<?= $etapaColors[$eKey] ?>; margin-right:6px;"></span>
+                                    <?= $eLabel ?>
+                                    <?php if ($eKey === 'captado'): ?> <i class="bi bi-check-circle-fill text-success"
+                                            style="font-size:0.7rem"></i><?php endif; ?>
+                                    <?php if ($eKey === 'descartado'): ?> <i class="bi bi-x-circle-fill text-danger"
+                                            style="font-size:0.7rem"></i><?php endif; ?>
+                                </td>
+                                <td class="text-end fw-bold"><?= $pipelineCaptacion[$eKey] ?? 0 ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cartera Etapas -->
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header py-2">
+                <span class="section-title" style="background: #d1fae5; color: #047857; font-size: 0.68rem;">
+                    <i class="bi bi-house-door"></i> CARTERA — ETAPAS
+                </span>
+            </div>
+            <div class="card-body p-0">
+                <table class="pipeline-table">
+                    <thead>
+                        <tr>
+                            <th>Estado</th>
+                            <th class="text-end">Nº</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php
+                        $carteraColors = ['disponible' => '#10b981', 'reservado' => '#f59e0b', 'vendido' => '#3b82f6', 'alquilado' => '#8b5cf6', 'retirado' => '#6b7280'];
+                        foreach ($carteraLabels as $cKey => $cLabel): ?>
+                            <tr>
+                                <td>
+                                    <span
+                                        style="display:inline-block; width:8px; height:8px; border-radius:50%; background:<?= $carteraColors[$cKey] ?? '#6b7280' ?>; margin-right:6px;"></span>
+                                    <?= $cLabel ?>
+                                </td>
+                                <td class="text-end fw-bold"><?= $carteraEtapas[$cKey] ?? 0 ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tasas de Conversión -->
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header py-2">
+                <span class="section-title" style="background: #fce7f3; color: #be185d; font-size: 0.68rem;">
+                    <i class="bi bi-graph-up-arrow"></i> TASAS DE CONVERSIÓN
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>1er Contacto → Visita</span>
+                        <strong><?= $convContactoVisita ?>%</strong>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar bg-primary" style="width: <?= $convContactoVisita ?>%"></div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>Visita → Captado</span>
+                        <strong><?= $convVisitaCaptado ?>%</strong>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar bg-success" style="width: <?= $convVisitaCaptado ?>%"></div>
+                    </div>
+                </div>
+                <div class="mt-3 text-center">
+                    <div class="d-flex justify-content-around">
+                        <div>
+                            <div class="fs-4 fw-bold text-primary"><?= $tareasPendientes ?></div><small
+                                class="text-muted">Tareas pendientes</small>
+                        </div>
+                        <div>
+                            <div class="fs-4 fw-bold text-danger"><?= $tareasVencidas ?></div><small
+                                class="text-muted">Vencidas</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Acciones rápidas -->
+<div class="row g-3 mb-3">
     <div class="col-6 col-md-3">
-        <a href="<?= APP_URL ?>/modules/propiedades/form.php" class="quick-action">
-            <i class="bi bi-plus-circle text-primary"></i>
-            <span>Nueva Propiedad</span>
+        <a href="<?= APP_URL ?>/modules/prospectos/form.php" class="quick-action">
+            <i class="bi bi-person-plus text-primary"></i>
+            <span>Nuevo Prospecto</span>
         </a>
     </div>
     <div class="col-6 col-md-3">
-        <a href="<?= APP_URL ?>/modules/clientes/form.php" class="quick-action">
-            <i class="bi bi-person-plus text-success"></i>
-            <span>Nuevo Cliente</span>
+        <a href="<?= APP_URL ?>/modules/propiedades/form.php" class="quick-action">
+            <i class="bi bi-house-add text-success"></i>
+            <span>Nueva Propiedad</span>
         </a>
     </div>
     <div class="col-6 col-md-3">
@@ -187,281 +599,156 @@ $convCierre = $visitasRealizadas > 0 ? round(($operacionesCerradas / $visitasRea
     </div>
 </div>
 
-<div class="row g-4">
-    <!-- Proximas Visitas -->
-    <div class="col-lg-6">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-calendar-event"></i> Proximas Visitas</span>
-                <a href="<?= APP_URL ?>/modules/visitas/index.php" class="btn btn-sm btn-outline-primary">Ver todas</a>
-            </div>
-            <div class="card-body p-0">
-                <?php if (empty($proximasVisitas)): ?>
-                <div class="empty-state py-4">
-                    <i class="bi bi-calendar-x"></i>
-                    <p>No hay visitas programadas</p>
-                </div>
-                <?php else: ?>
-                <div class="list-group list-group-flush">
-                    <?php foreach ($proximasVisitas as $v): ?>
-                    <div class="list-group-item">
-                        <div class="d-flex justify-content-between">
-                            <div>
-                                <strong><?= sanitize($v['referencia']) ?></strong> - <?= sanitize($v['propiedad']) ?><br>
-                                <small class="text-muted"><i class="bi bi-person"></i> <?= sanitize($v['cliente_nombre'] . ' ' . $v['cliente_apellidos']) ?></small>
-                            </div>
-                            <div class="text-end">
-                                <span class="badge bg-primary"><?= formatFecha($v['fecha']) ?></span><br>
-                                <small><?= substr($v['hora'], 0, 5) ?>h</small>
-                            </div>
-                        </div>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-
-    <!-- Tareas Urgentes -->
-    <div class="col-lg-6">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-check2-square"></i> Tareas Prioritarias</span>
-                <a href="<?= APP_URL ?>/modules/tareas/index.php" class="btn btn-sm btn-outline-primary">Ver todas</a>
-            </div>
-            <div class="card-body p-0">
-                <?php if (empty($tareasUrgentes)): ?>
-                <div class="empty-state py-4">
-                    <i class="bi bi-check-circle"></i>
-                    <p>No hay tareas pendientes</p>
-                </div>
-                <?php else: ?>
-                <div class="list-group list-group-flush">
-                    <?php foreach ($tareasUrgentes as $t): ?>
-                    <div class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <span class="prioridad-<?= $t['prioridad'] ?>"><i class="bi bi-circle-fill" style="font-size:0.5rem"></i></span>
-                                <strong><?= sanitize($t['titulo']) ?></strong><br>
-                                <small class="text-muted">
-                                    <?php if ($t['prop_ref']): ?>
-                                    <i class="bi bi-house"></i> <?= sanitize($t['prop_ref']) ?>
-                                    <?php endif; ?>
-                                    <?php if ($t['cliente_nombre']): ?>
-                                    <i class="bi bi-person"></i> <?= sanitize($t['cliente_nombre']) ?>
-                                    <?php endif; ?>
-                                </small>
-                            </div>
-                            <div class="text-end">
-                                <?php if ($t['fecha_vencimiento']): ?>
-                                <small class="<?= strtotime($t['fecha_vencimiento']) < time() ? 'text-danger fw-bold' : 'text-muted' ?>">
-                                    <?= formatFechaHora($t['fecha_vencimiento']) ?>
-                                </small>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Graficos -->
-<div class="row g-4 mb-4">
-    <div class="col-lg-6">
-        <div class="card">
-            <div class="card-header"><i class="bi bi-bar-chart-line"></i> Visitas por Mes</div>
-            <div class="card-body"><canvas id="chartVisitas" height="200"></canvas></div>
-        </div>
-    </div>
-    <div class="col-lg-6">
-        <div class="card">
-            <div class="card-header"><i class="bi bi-pie-chart"></i> Propiedades por Tipo</div>
-            <div class="card-body"><canvas id="chartTipos" height="200"></canvas></div>
-        </div>
-    </div>
-</div>
-
-<!-- Funnel de Conversion -->
+<!-- TABLES: CONTACTAR HOY -->
 <div class="row g-3 mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header"><i class="bi bi-funnel"></i> Embudo de Conversion</div>
-            <div class="card-body">
-                <div class="row align-items-center text-center">
-                    <div class="col-md-3">
-                        <div class="p-3 rounded" style="background: rgba(16,185,129,0.1);">
-                            <div class="fs-2 fw-bold text-success"><?= $totalLeads ?></div>
-                            <div class="text-muted">Contactos</div>
-                        </div>
-                    </div>
-                    <div class="col-md-1 d-none d-md-block">
-                        <i class="bi bi-chevron-right fs-3 text-muted"></i>
-                        <div class="small text-muted"><?= $convVisitas ?>%</div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="p-3 rounded" style="background: rgba(59,130,246,0.1);">
-                            <div class="fs-2 fw-bold text-primary"><?= $visitasRealizadas ?></div>
-                            <div class="text-muted">Visitas realizadas</div>
-                        </div>
-                    </div>
-                    <div class="col-md-1 d-none d-md-block">
-                        <i class="bi bi-chevron-right fs-3 text-muted"></i>
-                        <div class="small text-muted"><?= $convCierre ?>%</div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="p-3 rounded" style="background: rgba(245,158,11,0.1);">
-                            <div class="fs-2 fw-bold text-warning"><?= $operacionesCerradas ?></div>
-                            <div class="text-muted">Operaciones cerradas</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Ultimas propiedades y actividad -->
-<div class="row g-4 mt-2">
+    <!-- Prospectos por Urgencia -->
     <div class="col-lg-7">
         <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-house-door"></i> Ultimas Propiedades</span>
-                <a href="<?= APP_URL ?>/modules/propiedades/index.php" class="btn btn-sm btn-outline-primary">Ver todas</a>
+            <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                <span class="section-title" style="background: #fee2e2; color: #991b1b; font-size: 0.68rem;">
+                    <i class="bi bi-telephone-forward"></i> CONTACTAR HOY — Top <?= count($prospectosList) ?> Prospectos
+                    por Urgencia
+                </span>
+                <a href="<?= APP_URL ?>/modules/prospectos/index.php" class="btn btn-sm btn-outline-primary">Ver
+                    todos</a>
             </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead>
+            <div class="scroll-table" style="border: none; border-radius: 0;">
+                <table class="prospect-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Nombre</th>
+                            <th>Teléfono</th>
+                            <th>Etapa</th>
+                            <th>Temp.</th>
+                            <th>Próx. Cont.</th>
+                            <th>Días S/C</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($prospectosList as $idx => $pr):
+                            $dias = intval($pr['dias_sin_contacto']);
+                            $rowClass = '';
+                            if ($pr['fecha_proximo_contacto'] && $pr['fecha_proximo_contacto'] < date('Y-m-d'))
+                                $rowClass = 'row-danger';
+                            elseif ($dias > 15)
+                                $rowClass = 'row-muted';
+                            elseif ($dias >= 5)
+                                $rowClass = 'row-warning';
+                            $tc = $tempColors[$pr['temperatura'] ?? 'frio'] ?? '#3b82f6';
+                            ?>
+                            <tr class="<?= $rowClass ?>" style="cursor:pointer"
+                                onclick="location.href='<?= APP_URL ?>/modules/prospectos/ver.php?id=<?= $pr['id'] ?>'">
+                                <td class="fw-bold"><?= $idx + 1 ?></td>
+                                <td>
+                                    <strong><?= sanitize($pr['nombre']) ?></strong>
+                                </td>
+                                <td>
+                                    <?php if ($pr['telefono']): ?>
+                                        <a href="tel:<?= sanitize($pr['telefono']) ?>" onclick="event.stopPropagation()"
+                                            class="text-decoration-none"><?= sanitize($pr['telefono']) ?></a>
+                                    <?php else: ?>-<?php endif; ?>
+                                </td>
+                                <td>
+                                    <span
+                                        style="display:inline-block;width:6px;height:6px;border-radius:50%;background:<?= $etapaColors[$pr['etapa']] ?? '#6b7280' ?>;margin-right:4px;"></span>
+                                    <?= $etapasLabels[$pr['etapa']] ?? $pr['etapa'] ?>
+                                </td>
+                                <td>
+                                    <span class="temp-badge"
+                                        style="background: <?= $tc ?>20; color: <?= $tc ?>;"><?= $tempLabels[$pr['temperatura'] ?? 'frio'] ?? 'Frío' ?></span>
+                                </td>
+                                <td><?= $pr['fecha_proximo_contacto'] ? formatFecha($pr['fecha_proximo_contacto']) : '-' ?>
+                                </td>
+                                <td class="text-center">
+                                    <span
+                                        class="fw-bold <?= $dias > 15 ? 'text-danger' : ($dias > 7 ? 'text-warning' : 'text-success') ?>"><?= max(0, $dias) ?></span>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <?php if (empty($prospectosList)): ?>
                             <tr>
-                                <th>Ref.</th>
-                                <th>Titulo</th>
-                                <th>Tipo</th>
-                                <th>Precio</th>
-                                <th>Estado</th>
+                                <td colspan="7" class="text-center text-muted py-4"><i
+                                        class="bi bi-check-circle fs-4 d-block mb-2"></i>¡Sin prospectos urgentes!</td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($ultimasPropiedades as $p): ?>
-                            <tr style="cursor:pointer" onclick="location.href='<?= APP_URL ?>/modules/propiedades/ver.php?id=<?= $p['id'] ?>'">
-                                <td><strong><?= sanitize($p['referencia']) ?></strong></td>
-                                <td><?= sanitize(mb_substr($p['titulo'], 0, 40)) ?></td>
-                                <td><?= sanitize(getTiposPropiedad()[$p['tipo']] ?? $p['tipo']) ?></td>
-                                <td class="text-nowrap"><?= formatPrecio($p['precio']) ?></td>
-                                <td><span class="badge-estado badge-<?= $p['estado'] ?>"><?= ucfirst($p['estado']) ?></span></td>
-                            </tr>
-                            <?php endforeach; ?>
-                            <?php if (empty($ultimasPropiedades)): ?>
-                            <tr><td colspan="5" class="text-center text-muted py-4">No hay propiedades registradas</td></tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
 
-    <!-- Actividad Reciente (solo admin) -->
-    <?php if ($isAdm): ?>
+    <!-- Clientes a Contactar -->
     <div class="col-lg-5">
         <div class="card">
-            <div class="card-header"><i class="bi bi-clock-history"></i> Actividad Reciente</div>
-            <div class="card-body">
-                <?php if (empty($actividadReciente)): ?>
-                <div class="empty-state py-4">
-                    <i class="bi bi-clock"></i>
-                    <p>Sin actividad reciente</p>
-                </div>
-                <?php else: ?>
-                <div class="ps-2">
-                    <?php foreach ($actividadReciente as $act): ?>
-                    <div class="timeline-item">
-                        <strong><?= sanitize($act['usuario_nombre'] ?? 'Sistema') ?></strong>
-                        <span class="text-muted"><?= sanitize($act['accion']) ?></span>
-                        <span><?= sanitize($act['entidad']) ?></span>
-                        <?php if ($act['detalles']): ?>
-                        <br><small class="text-muted"><?= sanitize(mb_substr($act['detalles'], 0, 60)) ?></small>
+            <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                <span class="section-title" style="background: #dbeafe; color: #1e40af; font-size: 0.68rem;">
+                    <i class="bi bi-people"></i> CLIENTES — Contactar Hoy
+                </span>
+                <a href="<?= APP_URL ?>/modules/clientes/index.php" class="btn btn-sm btn-outline-primary">Ver todos</a>
+            </div>
+            <div class="scroll-table" style="border: none; border-radius: 0;">
+                <table class="prospect-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Cliente</th>
+                            <th>Teléfono</th>
+                            <th>Próx. Acción</th>
+                            <th>D. S/C</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($clientesList as $idx => $cl):
+                            $dias = intval($cl['dias_sin_contacto']);
+                            $rowClass = $dias > 15 ? 'row-muted' : ($dias > 7 ? 'row-warning' : '');
+                            ?>
+                            <tr class="<?= $rowClass ?>" style="cursor:pointer"
+                                onclick="location.href='<?= APP_URL ?>/modules/clientes/ver.php?id=<?= $cl['id'] ?>'">
+                                <td class="fw-bold"><?= $idx + 1 ?></td>
+                                <td><strong><?= sanitize($cl['nombre'] . ' ' . ($cl['apellidos'] ?? '')) ?></strong></td>
+                                <td>
+                                    <?php if ($cl['telefono']): ?>
+                                        <a href="tel:<?= sanitize($cl['telefono']) ?>"
+                                            onclick="event.stopPropagation()"><?= sanitize($cl['telefono']) ?></a>
+                                    <?php else: ?>-<?php endif; ?>
+                                </td>
+                                <td class="small"><?= sanitize(mb_strimwidth($cl['proxima_accion'] ?? '-', 0, 30, '...')) ?>
+                                </td>
+                                <td class="text-center">
+                                    <span
+                                        class="fw-bold <?= $dias > 15 ? 'text-danger' : ($dias > 7 ? 'text-warning' : 'text-success') ?>"><?= max(0, $dias) ?></span>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <?php if (empty($clientesList)): ?>
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4"><i
+                                        class="bi bi-check-circle fs-4 d-block mb-2"></i>Sin clientes pendientes</td>
+                            </tr>
                         <?php endif; ?>
-                        <div class="timeline-date"><?= formatFechaHora($act['created_at']) ?></div>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-    <?php endif; ?>
-</div>
-
-<!-- Resumen por estado de propiedades -->
-<div class="row g-4 mt-2 mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header"><i class="bi bi-bar-chart"></i> Propiedades por Estado</div>
-            <div class="card-body">
-                <div class="row text-center">
-                    <?php
-                    $estadosLabels = ['disponible' => ['Disponibles', 'success'], 'reservado' => ['Reservados', 'warning'], 'vendido' => ['Vendidos', 'primary'], 'alquilado' => ['Alquilados', 'info'], 'retirado' => ['Retirados', 'secondary']];
-                    foreach ($estadosLabels as $key => [$label, $color]):
-                    ?>
-                    <div class="col">
-                        <h3 class="text-<?= $color ?>"><?= $estadosProp[$key] ?? 0 ?></h3>
-                        <small class="text-muted"><?= $label ?></small>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script>
-// Visitas por Mes - Bar Chart
-new Chart(document.getElementById('chartVisitas'), {
-    type: 'bar',
-    data: {
-        labels: <?= json_encode($chartVisitasLabels) ?>,
-        datasets: [{
-            label: 'Visitas',
-            data: <?= json_encode(array_map('intval', $chartVisitasData)) ?>,
-            backgroundColor: 'rgba(16, 185, 129, 0.7)',
-            borderColor: '#10b981',
-            borderWidth: 1,
-            borderRadius: 6
-        }]
-    },
-    options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: {
-            y: { beginAtZero: true, ticks: { stepSize: 1 } }
-        }
-    }
-});
-
-// Propiedades por Tipo - Doughnut Chart
-new Chart(document.getElementById('chartTipos'), {
-    type: 'doughnut',
-    data: {
-        labels: <?= json_encode($chartTipoLabels) ?>,
-        datasets: [{
-            data: <?= json_encode(array_map('intval', $chartTipoData)) ?>,
-            backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#6b7280', '#ec4899', '#14b8a6'],
-            borderWidth: 2
-        }]
-    },
-    options: {
-        responsive: true,
-        plugins: {
-            legend: { position: 'right' }
-        }
-    }
-});
-</script>
+<!-- Legend -->
+<div class="mb-4 text-center">
+    <small class="text-muted">
+        <span
+            style="display:inline-block; width:10px; height:10px; background:rgba(239,68,68,0.15); border-radius:2px; margin-right:2px;"></span>
+        Vencido
+        &nbsp;&nbsp;
+        <span
+            style="display:inline-block; width:10px; height:10px; background:rgba(245,158,11,0.15); border-radius:2px; margin-right:2px;"></span>
+        5-15 días sin contacto
+        &nbsp;&nbsp;
+        <span
+            style="display:inline-block; width:10px; height:10px; background:rgba(100,116,139,0.1); border-radius:2px; margin-right:2px;"></span>
+        >15 días sin actividad
+    </small>
+</div>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

@@ -59,6 +59,7 @@ $provincias = getProvincias();
 $baseUrl = 'index.php?etapa=' . urlencode($filtroEtapa) . '&estado=' . urlencode($filtroEstado) . '&provincia=' . urlencode($filtroProvincia) . '&q=' . urlencode($filtroBusqueda) . '&activo=' . urlencode($filtroActivo);
 
 $etapas = [
+    'nuevo_lead' => ['label' => 'Nuevo Lead', 'color' => '#06b6d4'],
     'contactado' => ['label' => 'Contactado', 'color' => '#64748b'],
     'seguimiento' => ['label' => 'Seguimiento', 'color' => '#3b82f6'],
     'visita_programada' => ['label' => 'Visita Prog.', 'color' => '#8b5cf6'],

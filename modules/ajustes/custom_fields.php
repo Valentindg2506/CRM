@@ -89,6 +89,7 @@ $entidadLabels = [
     'cliente' => 'Clientes',
     'propiedad' => 'Propiedades',
     'visita' => 'Visitas',
+    'prospecto' => 'Prospectos',
 ];
 ?>
 

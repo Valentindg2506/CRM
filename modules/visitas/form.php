@@ -40,6 +40,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $values[] = $id;
                 $db->prepare("UPDATE visitas SET " . implode(', ', $fields) . " WHERE id = ?")->execute($values);
                 registrarActividad('editar', 'visita', $id);
+
+                // Actualizar evento del calendario vinculado
+                try {
+                    $fechaIni = $data['fecha'] . ' ' . $data['hora'];
+                    $fechaFin = $data['fecha'] . ' ' . date('H:i:s', strtotime($data['hora'] . ' +' . $data['duracion_minutos'] . ' minutes'));
+                    $sProp = $db->prepare("SELECT referencia, titulo FROM propiedades WHERE id = ?"); $sProp->execute([$data['propiedad_id']]); $propInfo = $sProp->fetch();
+                    $sCli = $db->prepare("SELECT nombre FROM clientes WHERE id = ?"); $sCli->execute([$data['cliente_id']]); $cliInfo = $sCli->fetch();
+                    $tituloEvento = 'Visita: ' . ($propInfo['referencia'] ?? '') . ' - ' . ($cliInfo['nombre'] ?? '');
+
+                    $existeCal = $db->prepare("SELECT id FROM calendario_eventos WHERE visita_id = ? AND usuario_id = ?");
+                    $existeCal->execute([$id, $data['agente_id']]);
+                    if ($existeCal->fetch()) {
+                        $db->prepare("UPDATE calendario_eventos SET titulo = ?, fecha_inicio = ?, fecha_fin = ?, propiedad_id = ?, cliente_id = ? WHERE visita_id = ? AND usuario_id = ?")
+                           ->execute([$tituloEvento, $fechaIni, $fechaFin, $data['propiedad_id'], $data['cliente_id'], $id, $data['agente_id']]);
+                    }
+                } catch (Exception $e) { logError('Calendar sync error (edit visita): ' . $e->getMessage()); }
             } else {
                 $fields = array_keys($data);
                 $placeholders = str_repeat('?,', count($fields) - 1) . '?';
@@ -49,6 +65,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Incrementar contador de visitas
                 $db->prepare("UPDATE propiedades SET visitas_count = visitas_count + 1 WHERE id = ?")->execute([$data['propiedad_id']]);
                 registrarActividad('crear', 'visita', $id);
+
+                // Crear evento en el calendario automáticamente
+                try {
+                    $fechaIni = $data['fecha'] . ' ' . $data['hora'];
+                    $fechaFin = $data['fecha'] . ' ' . date('H:i:s', strtotime($data['hora'] . ' +' . $data['duracion_minutos'] . ' minutes'));
+                    $sProp = $db->prepare("SELECT referencia, titulo FROM propiedades WHERE id = ?"); $sProp->execute([$data['propiedad_id']]); $propInfo = $sProp->fetch();
+                    $sCli = $db->prepare("SELECT nombre FROM clientes WHERE id = ?"); $sCli->execute([$data['cliente_id']]); $cliInfo = $sCli->fetch();
+                    $tituloEvento = 'Visita: ' . ($propInfo['referencia'] ?? '') . ' - ' . ($cliInfo['nombre'] ?? '');
+
+                    $db->prepare("INSERT INTO calendario_eventos (titulo, tipo, color, fecha_inicio, fecha_fin, propiedad_id, cliente_id, visita_id, usuario_id) VALUES (?, 'visita', '#10b981', ?, ?, ?, ?, ?, ?)")
+                       ->execute([$tituloEvento, $fechaIni, $fechaFin, $data['propiedad_id'], $data['cliente_id'], $id, $data['agente_id']]);
+                } catch (Exception $e) { logError('Calendar sync error (new visita): ' . $e->getMessage()); }
 
                 // Notificar por email
                 try {

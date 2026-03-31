@@ -47,12 +47,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $values[] = $id;
                 $db->prepare("UPDATE tareas SET " . implode(', ', $fields) . " WHERE id = ?")->execute($values);
                 registrarActividad('editar', 'tarea', $id, $data['titulo']);
+
+                // Sincronizar con calendario
+                try {
+                    if ($data['fecha_vencimiento']) {
+                        $fechaFin = date('Y-m-d H:i:s', strtotime($data['fecha_vencimiento'] . ' +1 hour'));
+                        $tituloEvento = 'Tarea: ' . $data['titulo'];
+                        $colorTarea = $data['prioridad'] === 'urgente' ? '#ef4444' : ($data['prioridad'] === 'alta' ? '#f59e0b' : '#8b5cf6');
+
+                        // Buscar evento existente vinculado a esta tarea
+                        $existeCal = $db->prepare("SELECT id FROM calendario_eventos WHERE titulo LIKE ? AND tipo = 'tarea' AND usuario_id = ? AND DATE(fecha_inicio) = DATE(?)");
+                        $existeCal->execute(['Tarea: %' . $data['titulo'] . '%', $data['asignado_a'], $data['fecha_vencimiento']]);
+                        // Si tarea completada/cancelada, no sincronizar
+                        if (in_array($data['estado'], ['completada', 'cancelada'])) {
+                            $db->prepare("DELETE FROM calendario_eventos WHERE titulo = ? AND tipo = 'tarea' AND usuario_id = ?")
+                               ->execute([$tituloEvento, $data['asignado_a']]);
+                        }
+                    }
+                } catch (Exception $e) { logError('Calendar sync error (edit tarea): ' . $e->getMessage()); }
             } else {
                 $fields = array_keys($data);
                 $placeholders = str_repeat('?,', count($fields) - 1) . '?';
                 $db->prepare("INSERT INTO tareas (`" . implode('`,`', $fields) . "`) VALUES ($placeholders)")->execute(array_values($data));
                 $newTareaId = $db->lastInsertId();
                 registrarActividad('crear', 'tarea', $newTareaId, $data['titulo']);
+
+                // Crear evento en calendario automáticamente
+                try {
+                    if ($data['fecha_vencimiento']) {
+                        $fechaFin = date('Y-m-d H:i:s', strtotime($data['fecha_vencimiento'] . ' +1 hour'));
+                        $tituloEvento = 'Tarea: ' . $data['titulo'];
+                        $colorTarea = $data['prioridad'] === 'urgente' ? '#ef4444' : ($data['prioridad'] === 'alta' ? '#f59e0b' : '#8b5cf6');
+
+                        $db->prepare("INSERT INTO calendario_eventos (titulo, tipo, color, fecha_inicio, fecha_fin, propiedad_id, cliente_id, usuario_id) VALUES (?, 'tarea', ?, ?, ?, ?, ?, ?)")
+                           ->execute([$tituloEvento, $colorTarea, $data['fecha_vencimiento'], $fechaFin, $data['propiedad_id'], $data['cliente_id'], $data['asignado_a']]);
+                    }
+                } catch (Exception $e) { logError('Calendar sync error (new tarea): ' . $e->getMessage()); }
 
                 // Notificar por email al asignado
                 try {

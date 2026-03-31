@@ -2,6 +2,7 @@
 $pageTitle = 'Nuevo Prospecto';
 require_once __DIR__ . '/../../includes/header.php';
 require_once __DIR__ . '/../../includes/validators.php';
+require_once __DIR__ . '/../../includes/custom_fields_helper.php';
 
 $db = getDB();
 $id = intval(get('id'));
@@ -12,7 +13,7 @@ if ($id) {
     $stmt->execute([$id]);
     $prospecto = $stmt->fetch();
     if (!$prospecto) { setFlash('danger', 'Prospecto no encontrado.'); header('Location: index.php'); exit; }
-    $pageTitle = 'Editar Prospecto';
+    $pageTitle = 'Editar Prospecto: ' . $prospecto['referencia'];
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -23,21 +24,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'telefono' => post('telefono') ?: null,
         'telefono2' => post('telefono2') ?: null,
         'email' => post('email') ?: null,
-        'etapa' => post('etapa', 'contactado'),
+        'etapa' => post('etapa', 'nuevo_lead'),
         'tipo_propiedad' => post('tipo_propiedad') ?: null,
+        'operacion' => post('operacion') ?: null,
         'direccion' => post('direccion') ?: null,
+        'numero' => post('numero') ?: null,
+        'piso_puerta' => post('piso_puerta') ?: null,
         'barrio' => post('barrio') ?: null,
         'localidad' => post('localidad') ?: null,
         'provincia' => post('provincia') ?: null,
+        'comunidad_autonoma' => post('comunidad_autonoma') ?: null,
         'codigo_postal' => post('codigo_postal') ?: null,
         'precio_estimado' => post('precio_estimado') ? floatval(str_replace(',', '.', post('precio_estimado'))) : null,
         'precio_propietario' => post('precio_propietario') ? floatval(str_replace(',', '.', post('precio_propietario'))) : null,
+        'precio_comunidad' => post('precio_comunidad') ? floatval(str_replace(',', '.', post('precio_comunidad'))) : null,
         'superficie' => post('superficie') ? floatval(str_replace(',', '.', post('superficie'))) : null,
+        'superficie_construida' => post('superficie_construida') ? floatval(str_replace(',', '.', post('superficie_construida'))) : null,
+        'superficie_util' => post('superficie_util') ? floatval(str_replace(',', '.', post('superficie_util'))) : null,
+        'superficie_parcela' => post('superficie_parcela') ? floatval(str_replace(',', '.', post('superficie_parcela'))) : null,
         'habitaciones' => post('habitaciones') ?: null,
+        'banos' => post('banos') ?: null,
+        'aseos' => post('aseos') ?: null,
+        'planta' => post('planta') ?: null,
+        'ascensor' => isset($_POST['ascensor']) ? 1 : 0,
+        'garaje_incluido' => isset($_POST['garaje_incluido']) ? 1 : 0,
+        'trastero_incluido' => isset($_POST['trastero_incluido']) ? 1 : 0,
+        'terraza' => isset($_POST['terraza']) ? 1 : 0,
+        'balcon' => isset($_POST['balcon']) ? 1 : 0,
+        'jardin' => isset($_POST['jardin']) ? 1 : 0,
+        'piscina' => isset($_POST['piscina']) ? 1 : 0,
+        'aire_acondicionado' => isset($_POST['aire_acondicionado']) ? 1 : 0,
+        'calefaccion' => post('calefaccion') ?: null,
+        'orientacion' => post('orientacion') ?: null,
+        'antiguedad' => post('antiguedad') ?: null,
+        'estado_conservacion' => post('estado_conservacion') ?: null,
+        'certificacion_energetica' => post('certificacion_energetica') ?: null,
+        'referencia_catastral' => post('referencia_catastral') ?: null,
         'enlace' => post('enlace') ?: null,
+        'descripcion' => $_POST['descripcion'] ?? null,
+        'descripcion_interna' => $_POST['descripcion_interna'] ?? null,
         'fecha_contacto' => post('fecha_contacto') ?: null,
         'fecha_proximo_contacto' => post('fecha_proximo_contacto') ?: null,
         'estado' => post('estado', 'nuevo'),
+        'temperatura' => post('temperatura', 'frio'),
         'comision' => post('comision') ? floatval(str_replace(',', '.', post('comision'))) : null,
         'exclusividad' => isset($_POST['exclusividad']) ? 1 : 0,
         'notas' => $_POST['notas'] ?? null,
@@ -47,7 +76,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'activo' => isset($_POST['activo']) ? 1 : 0,
     ];
 
-    // Validacion
     $erroresValidacion = validarProspecto($data);
 
     if (!empty($erroresValidacion)) {
@@ -57,14 +85,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             if ($id) {
-                $fields = [];
-                $values = [];
+                $fields = []; $values = [];
                 foreach ($data as $k => $v) { $fields[] = "`$k` = ?"; $values[] = $v; }
                 $values[] = $id;
                 $db->prepare("UPDATE prospectos SET " . implode(', ', $fields) . " WHERE id = ?")->execute($values);
                 registrarActividad('editar', 'prospecto', $id, $data['nombre']);
             } else {
-                // Generar referencia automatica
                 $stmtRef = $db->query("SELECT MAX(CAST(SUBSTRING(referencia, 3) AS UNSIGNED)) as max_ref FROM prospectos WHERE referencia LIKE 'PR%'");
                 $maxRef = $stmtRef->fetch()['max_ref'] ?? 0;
                 $data['referencia'] = 'PR' . str_pad($maxRef + 1, 3, '0', STR_PAD_LEFT);
@@ -75,6 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $id = $db->lastInsertId();
                 registrarActividad('crear', 'prospecto', $id, $data['nombre']);
             }
+            saveCustomFieldValues($id, 'prospecto', $_POST);
             setFlash('success', $prospecto ? 'Prospecto actualizado.' : 'Prospecto creado correctamente.');
             header('Location: ver.php?id=' . $id);
             exit;
@@ -89,6 +116,7 @@ $provincias = getProvincias();
 $p = $prospecto ?? [];
 
 $etapas = [
+    'nuevo_lead' => 'Nuevo Lead',
     'contactado' => 'Contactado',
     'seguimiento' => 'En Seguimiento',
     'visita_programada' => 'Visita Programada',
@@ -98,14 +126,15 @@ $etapas = [
 ];
 
 $estados = [
-    'nuevo' => 'Nuevo',
-    'en_proceso' => 'En Proceso',
-    'pendiente' => 'Pendiente Respuesta',
-    'sin_interes' => 'Sin Interés',
-    'captado' => 'Captado',
+    'nuevo' => 'Nuevo', 'en_proceso' => 'En Proceso', 'pendiente' => 'Pendiente Respuesta',
+    'sin_interes' => 'Sin Interés', 'captado' => 'Captado',
 ];
 
-$tiposPropiedad = ['Piso', 'Casa', 'Chalet', 'Adosado', 'Atico', 'Duplex', 'Estudio', 'Local', 'Oficina', 'Nave', 'Terreno', 'Garaje', 'Edificio', 'Otro'];
+$tiposPropiedad = ['Piso','Casa','Chalet','Adosado','Atico','Duplex','Estudio','Local','Oficina','Nave','Terreno','Garaje','Trastero','Edificio','Otro'];
+$operaciones = ['venta' => 'Venta', 'alquiler' => 'Alquiler', 'alquiler_opcion_compra' => 'Alquiler con opción a compra', 'traspaso' => 'Traspaso'];
+$orientaciones = ['norte'=>'Norte','sur'=>'Sur','este'=>'Este','oeste'=>'Oeste','noreste'=>'Noreste','noroeste'=>'Noroeste','sureste'=>'Sureste','suroeste'=>'Suroeste'];
+$conservaciones = ['a_estrenar'=>'A estrenar','buen_estado'=>'Buen estado','a_reformar'=>'A reformar','en_construccion'=>'En construcción'];
+$energeticas = ['A'=>'A','B'=>'B','C'=>'C','D'=>'D','E'=>'E','F'=>'F','G'=>'G','en_tramite'=>'En trámite','exento'=>'Exento'];
 ?>
 
 <?php if (!empty($error)): ?>
@@ -143,20 +172,28 @@ $tiposPropiedad = ['Piso', 'Casa', 'Chalet', 'Adosado', 'Atico', 'Duplex', 'Estu
                     <label class="form-label">Email</label>
                     <input type="email" name="email" class="form-control" value="<?= sanitize($p['email'] ?? '') ?>">
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label">Etapa Pipeline</label>
                     <select name="etapa" class="form-select">
                         <?php foreach ($etapas as $k => $v): ?>
-                        <option value="<?= $k ?>" <?= ($p['etapa'] ?? 'contactado') === $k ? 'selected' : '' ?>><?= $v ?></option>
+                        <option value="<?= $k ?>" <?= ($p['etapa'] ?? 'nuevo_lead') === $k ? 'selected' : '' ?>><?= $v ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-2">
                     <label class="form-label">Estado</label>
                     <select name="estado" class="form-select">
                         <?php foreach ($estados as $k => $v): ?>
                         <option value="<?= $k ?>" <?= ($p['estado'] ?? 'nuevo') === $k ? 'selected' : '' ?>><?= $v ?></option>
                         <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Temperatura</label>
+                    <select name="temperatura" class="form-select">
+                        <option value="frio" <?= ($p['temperatura'] ?? 'frio') === 'frio' ? 'selected' : '' ?>>❄️ Frío</option>
+                        <option value="templado" <?= ($p['temperatura'] ?? '') === 'templado' ? 'selected' : '' ?>>🌡️ Templado</option>
+                        <option value="caliente" <?= ($p['temperatura'] ?? '') === 'caliente' ? 'selected' : '' ?>>🔥 Caliente</option>
                     </select>
                 </div>
             </div>
@@ -167,6 +204,7 @@ $tiposPropiedad = ['Piso', 'Casa', 'Chalet', 'Adosado', 'Atico', 'Duplex', 'Estu
         <div class="card-header"><i class="bi bi-house-door"></i> Datos de la Propiedad</div>
         <div class="card-body">
             <div class="row g-3">
+                <!-- Tipo y Operación -->
                 <div class="col-md-3">
                     <label class="form-label">Tipo de Propiedad</label>
                     <select name="tipo_propiedad" class="form-select">
@@ -176,35 +214,17 @@ $tiposPropiedad = ['Piso', 'Casa', 'Chalet', 'Adosado', 'Atico', 'Duplex', 'Estu
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-md-5">
-                    <label class="form-label">Dirección</label>
-                    <input type="text" name="direccion" class="form-control" value="<?= sanitize($p['direccion'] ?? '') ?>">
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Barrio / Zona</label>
-                    <input type="text" name="barrio" class="form-control" value="<?= sanitize($p['barrio'] ?? '') ?>">
-                </div>
                 <div class="col-md-3">
-                    <label class="form-label">Localidad</label>
-                    <input type="text" name="localidad" class="form-control" value="<?= sanitize($p['localidad'] ?? '') ?>">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label">Provincia</label>
-                    <select name="provincia" class="form-select">
+                    <label class="form-label">Operación</label>
+                    <select name="operacion" class="form-select">
                         <option value="">-</option>
-                        <?php foreach ($provincias as $prov): ?>
-                        <option value="<?= $prov ?>" <?= ($p['provincia'] ?? '') === $prov ? 'selected' : '' ?>><?= $prov ?></option>
+                        <?php foreach ($operaciones as $k => $v): ?>
+                        <option value="<?= $k ?>" <?= ($p['operacion'] ?? '') === $k ? 'selected' : '' ?>><?= $v ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-md-2">
-                    <label class="form-label">Código Postal</label>
-                    <input type="text" name="codigo_postal" class="form-control" maxlength="5" value="<?= sanitize($p['codigo_postal'] ?? '') ?>">
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Enlace (Portal / Anuncio)</label>
-                    <input type="url" name="enlace" class="form-control" placeholder="https://..." value="<?= sanitize($p['enlace'] ?? '') ?>">
-                </div>
+
+                <!-- Precios -->
                 <div class="col-md-3">
                     <label class="form-label">Precio Estimado</label>
                     <div class="input-group">
@@ -220,18 +240,153 @@ $tiposPropiedad = ['Piso', 'Casa', 'Chalet', 'Adosado', 'Atico', 'Duplex', 'Estu
                     </div>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label">Superficie (m²)</label>
+                    <label class="form-label">Comunidad (€/mes)</label>
+                    <input type="text" name="precio_comunidad" class="form-control" value="<?= sanitize($p['precio_comunidad'] ?? '') ?>">
+                </div>
+
+                <!-- Superficies -->
+                <div class="col-md-2">
+                    <label class="form-label">Sup. Total (m²)</label>
                     <input type="number" name="superficie" class="form-control" step="0.01" value="<?= sanitize($p['superficie'] ?? '') ?>">
                 </div>
                 <div class="col-md-2">
+                    <label class="form-label">Sup. Construida</label>
+                    <input type="number" name="superficie_construida" class="form-control" step="0.01" value="<?= sanitize($p['superficie_construida'] ?? '') ?>">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Sup. Útil</label>
+                    <input type="number" name="superficie_util" class="form-control" step="0.01" value="<?= sanitize($p['superficie_util'] ?? '') ?>">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Sup. Parcela</label>
+                    <input type="number" name="superficie_parcela" class="form-control" step="0.01" value="<?= sanitize($p['superficie_parcela'] ?? '') ?>">
+                </div>
+
+                <!-- Habitaciones / Baños -->
+                <div class="col-md-2">
                     <label class="form-label">Habitaciones</label>
                     <input type="number" name="habitaciones" class="form-control" min="0" value="<?= sanitize($p['habitaciones'] ?? '') ?>">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Baños</label>
+                    <input type="number" name="banos" class="form-control" min="0" value="<?= sanitize($p['banos'] ?? '') ?>">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Aseos</label>
+                    <input type="number" name="aseos" class="form-control" min="0" value="<?= sanitize($p['aseos'] ?? '') ?>">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Planta</label>
+                    <input type="text" name="planta" class="form-control" value="<?= sanitize($p['planta'] ?? '') ?>">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Antigüedad (años)</label>
+                    <input type="number" name="antiguedad" class="form-control" min="0" value="<?= sanitize($p['antiguedad'] ?? '') ?>">
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">Comisión (%)</label>
                     <div class="input-group">
                         <input type="text" name="comision" class="form-control" value="<?= sanitize($p['comision'] ?? '') ?>">
                         <span class="input-group-text">%</span>
+                    </div>
+                </div>
+
+                <!-- Dirección -->
+                <div class="col-md-4">
+                    <label class="form-label">Dirección</label>
+                    <input type="text" name="direccion" class="form-control" value="<?= sanitize($p['direccion'] ?? '') ?>">
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label">Nº</label>
+                    <input type="text" name="numero" class="form-control" value="<?= sanitize($p['numero'] ?? '') ?>">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Piso/Puerta</label>
+                    <input type="text" name="piso_puerta" class="form-control" value="<?= sanitize($p['piso_puerta'] ?? '') ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Barrio / Zona</label>
+                    <input type="text" name="barrio" class="form-control" value="<?= sanitize($p['barrio'] ?? '') ?>">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">C. Postal</label>
+                    <input type="text" name="codigo_postal" class="form-control" maxlength="5" value="<?= sanitize($p['codigo_postal'] ?? '') ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Localidad</label>
+                    <input type="text" name="localidad" class="form-control" value="<?= sanitize($p['localidad'] ?? '') ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Provincia</label>
+                    <select name="provincia" class="form-select">
+                        <option value="">-</option>
+                        <?php foreach ($provincias as $prov): ?>
+                        <option value="<?= $prov ?>" <?= ($p['provincia'] ?? '') === $prov ? 'selected' : '' ?>><?= $prov ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Comunidad Autónoma</label>
+                    <input type="text" name="comunidad_autonoma" class="form-control" value="<?= sanitize($p['comunidad_autonoma'] ?? '') ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Ref. Catastral</label>
+                    <input type="text" name="referencia_catastral" class="form-control" maxlength="25" value="<?= sanitize($p['referencia_catastral'] ?? '') ?>">
+                </div>
+
+                <!-- Características / Selects -->
+                <div class="col-md-3">
+                    <label class="form-label">Orientación</label>
+                    <select name="orientacion" class="form-select">
+                        <option value="">-</option>
+                        <?php foreach ($orientaciones as $k => $v): ?>
+                        <option value="<?= $k ?>" <?= ($p['orientacion'] ?? '') === $k ? 'selected' : '' ?>><?= $v ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Conservación</label>
+                    <select name="estado_conservacion" class="form-select">
+                        <option value="">-</option>
+                        <?php foreach ($conservaciones as $k => $v): ?>
+                        <option value="<?= $k ?>" <?= ($p['estado_conservacion'] ?? '') === $k ? 'selected' : '' ?>><?= $v ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Cert. Energética</label>
+                    <select name="certificacion_energetica" class="form-select">
+                        <option value="">-</option>
+                        <?php foreach ($energeticas as $k => $v): ?>
+                        <option value="<?= $k ?>" <?= ($p['certificacion_energetica'] ?? '') === $k ? 'selected' : '' ?>><?= $v ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Calefacción</label>
+                    <input type="text" name="calefaccion" class="form-control" placeholder="Gas, eléctrica..." value="<?= sanitize($p['calefaccion'] ?? '') ?>">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Enlace (Portal / Anuncio)</label>
+                    <input type="url" name="enlace" class="form-control" placeholder="https://..." value="<?= sanitize($p['enlace'] ?? '') ?>">
+                </div>
+
+                <!-- Checkboxes extras -->
+                <div class="col-12">
+                    <label class="form-label d-block">Extras</label>
+                    <div class="d-flex flex-wrap gap-3">
+                        <?php
+                        $checks = [
+                            'ascensor' => 'Ascensor', 'garaje_incluido' => 'Garaje', 'trastero_incluido' => 'Trastero',
+                            'terraza' => 'Terraza', 'balcon' => 'Balcón', 'jardin' => 'Jardín',
+                            'piscina' => 'Piscina', 'aire_acondicionado' => 'Aire Acond.',
+                        ];
+                        foreach ($checks as $ck => $cl): ?>
+                        <div class="form-check">
+                            <input type="checkbox" name="<?= $ck ?>" class="form-check-input" id="<?= $ck ?>" <?= ($p[$ck] ?? 0) ? 'checked' : '' ?>>
+                            <label class="form-check-label" for="<?= $ck ?>"><?= $cl ?></label>
+                        </div>
+                        <?php endforeach; ?>
                     </div>
                 </div>
             </div>
@@ -276,24 +431,41 @@ $tiposPropiedad = ['Piso', 'Casa', 'Chalet', 'Adosado', 'Atico', 'Duplex', 'Estu
     </div>
 
     <div class="card mb-4">
-        <div class="card-header"><i class="bi bi-chat-text"></i> Notas y Comentarios</div>
+        <div class="card-header"><i class="bi bi-chat-text"></i> Notas y Descripciones</div>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-6">
+                    <label class="form-label">Descripción (pública)</label>
+                    <textarea name="descripcion" class="form-control" rows="4" placeholder="Descripción del inmueble..."><?= sanitize($p['descripcion'] ?? '') ?></textarea>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Descripción interna</label>
+                    <textarea name="descripcion_interna" class="form-control" rows="4" placeholder="Notas internas sobre el inmueble..."><?= sanitize($p['descripcion_interna'] ?? '') ?></textarea>
+                </div>
+                <div class="col-md-6">
                     <label class="form-label">Notas Generales</label>
-                    <textarea name="notas" class="form-control" rows="4" placeholder="Notas sobre el prospecto..."><?= sanitize($p['notas'] ?? '') ?></textarea>
+                    <textarea name="notas" class="form-control" rows="3" placeholder="Notas sobre el prospecto..."><?= sanitize($p['notas'] ?? '') ?></textarea>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Reformas</label>
-                    <textarea name="reformas" class="form-control" rows="4" placeholder="Info de reformas necesarias/realizadas..."><?= sanitize($p['reformas'] ?? '') ?></textarea>
-                </div>
-                <div class="col-12">
-                    <label class="form-label">Historial de Contactos</label>
-                    <textarea name="historial_contactos" class="form-control" rows="4" placeholder="Registro de llamadas, emails, visitas..."><?= sanitize($p['historial_contactos'] ?? '') ?></textarea>
+                    <textarea name="reformas" class="form-control" rows="3" placeholder="Info de reformas necesarias/realizadas..."><?= sanitize($p['reformas'] ?? '') ?></textarea>
                 </div>
             </div>
         </div>
     </div>
+
+    <?php
+    $customValues = $id ? getCustomFieldValues($id, 'prospecto') : [];
+    $customFieldsList = getCustomFields('prospecto');
+    if (!empty($customFieldsList)):
+    ?>
+    <div class="card mb-4">
+        <div class="card-header"><i class="bi bi-ui-checks-grid"></i> Campos Personalizados</div>
+        <div class="card-body">
+            <?php renderCustomFieldsForm('prospecto', $customValues); ?>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <div class="d-flex gap-2 mb-4">
         <button type="submit" class="btn btn-primary btn-lg"><i class="bi bi-check-lg"></i> <?= $id ? 'Actualizar' : 'Crear' ?> Prospecto</button>

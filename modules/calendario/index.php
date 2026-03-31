@@ -71,6 +71,57 @@ foreach ($visitas as $v) {
     $eventos[] = $v;
 }
 
+// También obtener tareas con fecha de vencimiento
+$stmtTareasCal = $db->prepare("
+    SELECT t.id, DATE(t.fecha_vencimiento) as fecha, TIME(t.fecha_vencimiento) as hora,
+           t.estado as tarea_estado, t.prioridad,
+           CONCAT('Tarea: ', t.titulo) as titulo,
+           'tarea' as tipo,
+           CASE t.prioridad WHEN 'urgente' THEN '#ef4444' WHEN 'alta' THEN '#f59e0b' ELSE '#8b5cf6' END as color,
+           0 as todo_dia,
+           c.nombre as cliente_nombre, c.apellidos as cliente_apellidos,
+           p.titulo as propiedad_titulo, p.referencia as propiedad_ref,
+           t.cliente_id, t.propiedad_id
+    FROM tareas t
+    LEFT JOIN clientes c ON t.cliente_id = c.id
+    LEFT JOIN propiedades p ON t.propiedad_id = p.id
+    WHERE (t.asignado_a = ? OR t.creado_por = ?)
+      AND t.estado IN ('pendiente','en_progreso')
+      AND DATE(t.fecha_vencimiento) >= ? AND DATE(t.fecha_vencimiento) <= ?
+    ORDER BY t.fecha_vencimiento ASC
+");
+$stmtTareasCal->execute([currentUserId(), currentUserId(), "$anio-" . str_pad($mes, 2, '0', STR_PAD_LEFT) . "-01", "$anio-" . str_pad($mes, 2, '0', STR_PAD_LEFT) . "-$diasEnMes"]);
+$tareasCal = $stmtTareasCal->fetchAll();
+
+foreach ($tareasCal as $t) {
+    $t['fecha_inicio'] = $t['fecha'] . ' ' . ($t['hora'] ?? '09:00:00');
+    $t['fecha_fin'] = $t['fecha'] . ' ' . ($t['hora'] ? date('H:i:s', strtotime($t['hora'] . ' +1 hour')) : '10:00:00');
+    $eventos[] = $t;
+}
+
+// Prospectos con fecha de próximo contacto
+$stmtProspCal = $db->prepare("
+    SELECT p.id, p.fecha_proximo_contacto as fecha, '09:00:00' as hora,
+           CONCAT('Contactar: ', p.nombre) as titulo,
+           'llamada' as tipo, '#f59e0b' as color, 0 as todo_dia,
+           NULL as cliente_nombre, NULL as cliente_apellidos,
+           NULL as propiedad_titulo, NULL as propiedad_ref,
+           NULL as cliente_id, NULL as propiedad_id
+    FROM prospectos p
+    WHERE p.agente_id = ?
+      AND p.activo = 1 AND p.etapa NOT IN ('captado','descartado')
+      AND p.fecha_proximo_contacto >= ? AND p.fecha_proximo_contacto <= ?
+    ORDER BY p.fecha_proximo_contacto ASC
+");
+$stmtProspCal->execute([currentUserId(), "$anio-" . str_pad($mes, 2, '0', STR_PAD_LEFT) . "-01", "$anio-" . str_pad($mes, 2, '0', STR_PAD_LEFT) . "-$diasEnMes"]);
+$prospCal = $stmtProspCal->fetchAll();
+
+foreach ($prospCal as $pc) {
+    $pc['fecha_inicio'] = $pc['fecha'] . ' 09:00:00';
+    $pc['fecha_fin'] = $pc['fecha'] . ' 09:30:00';
+    $eventos[] = $pc;
+}
+
 // Organizar eventos por dia
 $eventosPorDia = [];
 foreach ($eventos as $evento) {

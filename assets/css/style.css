@@ -817,6 +817,13 @@ body {
     color: var(--primary-dark);
 }
 
+/* Fix dropdowns clipped inside cards & tables */
+.card:has(.dropdown.show),
+.table-container:has(.dropdown.show),
+.table-responsive:has(.dropdown.show) {
+    overflow: visible !important;
+}
+
 /* ========= BADGE OVERRIDE ========= */
 .badge.bg-primary {
     background: var(--primary) !important;
