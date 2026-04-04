@@ -37,6 +37,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $input = file_get_contents('php://input');
+    $secret = getEnvSecret('WHATSAPP_APP_SECRET', '');
+    $signature = $_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '';
+    if ($secret !== '') {
+        $expected = 'sha256=' . hash_hmac('sha256', $input, $secret);
+        if ($signature === '' || !hash_equals($expected, $signature)) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Firma invalida']);
+            exit;
+        }
+    }
+
     $data = json_decode($input, true);
 
     if (!$data) {

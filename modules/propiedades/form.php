@@ -13,6 +13,11 @@ if ($id) {
     $stmt->execute([$id]);
     $propiedad = $stmt->fetch();
     if (!$propiedad) { setFlash('danger', 'Propiedad no encontrada.'); header('Location: index.php'); exit; }
+    if (!isAdmin() && intval($propiedad['agente_id']) !== intval(currentUserId())) {
+        setFlash('danger', 'No tienes permisos para editar esta propiedad.');
+        header('Location: index.php');
+        exit;
+    }
     $pageTitle = 'Editar Propiedad';
 
     $stmtFotos = $db->prepare("SELECT * FROM propiedad_fotos WHERE propiedad_id = ? ORDER BY orden");
@@ -65,7 +70,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'descripcion' => $_POST['descripcion'] ?? '',
         'descripcion_interna' => $_POST['descripcion_interna'] ?? '',
         'propietario_id' => post('propietario_id') ?: null,
-        'agente_id' => post('agente_id') ?: currentUserId(),
+        'agente_id' => isAdmin()
+            ? (post('agente_id') ?: ($propiedad['agente_id'] ?? currentUserId()))
+            : ($propiedad['agente_id'] ?? currentUserId()),
         'fecha_captacion' => post('fecha_captacion') ?: date('Y-m-d'),
         'fecha_disponibilidad' => post('fecha_disponibilidad') ?: null,
     ];
@@ -405,7 +412,12 @@ $p = $propiedad ?? [];
                     <img src="<?= APP_URL ?>/assets/uploads/<?= sanitize($foto['archivo']) ?>" alt="" class="img-fluid rounded">
                     <div class="text-center mt-1">
                         <?php if ($foto['es_principal']): ?><span class="badge bg-primary">Principal</span><?php endif; ?>
-                        <a href="delete_foto.php?id=<?= $foto['id'] ?>&prop=<?= $id ?>&csrf=<?= csrfToken() ?>" class="btn btn-sm btn-outline-danger" data-confirm="Eliminar esta foto?"><i class="bi bi-trash"></i></a>
+                        <form method="POST" action="delete_foto.php" class="d-inline" onsubmit="return confirm('Eliminar esta foto?')">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="id" value="<?= intval($foto['id']) ?>">
+                            <input type="hidden" name="prop" value="<?= intval($id) ?>">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                        </form>
                     </div>
                 </div>
                 <?php endforeach; ?>

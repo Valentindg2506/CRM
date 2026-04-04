@@ -244,7 +244,11 @@ $estados = [
                         <div class="btn-group btn-group-sm">
                             <a href="ver.php?id=<?= $pr['id'] ?>" class="btn btn-outline-primary" title="Ver"><i class="bi bi-eye"></i></a>
                             <a href="form.php?id=<?= $pr['id'] ?>" class="btn btn-outline-secondary" title="Editar"><i class="bi bi-pencil"></i></a>
-                            <a href="delete.php?id=<?= $pr['id'] ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-danger" title="Eliminar" data-confirm="Seguro que deseas eliminar este prospecto?"><i class="bi bi-trash"></i></a>
+                            <form method="POST" action="delete.php" onsubmit="return confirm('Seguro que deseas eliminar este prospecto?')" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                                <input type="hidden" name="id" value="<?= intval($pr['id']) ?>">
+                                <button type="submit" class="btn btn-outline-danger" title="Eliminar"><i class="bi bi-trash"></i></button>
+                            </form>
                         </div>
                     </td>
                 </tr>

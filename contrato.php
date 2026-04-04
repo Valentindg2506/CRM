@@ -4,10 +4,24 @@ $db = getDB();
 
 $token = trim($_GET['token'] ?? '');
 if (!$token) { http_response_code(404); echo '<h1>No encontrado</h1>'; exit; }
+$pdfMode = isset($_GET['pdf']) && $_GET['pdf'] === '1';
 
 $co = $db->prepare("SELECT co.*, c.nombre as cli_nombre, c.apellidos as cli_apellidos FROM contratos co LEFT JOIN clientes c ON co.cliente_id=c.id WHERE co.token=?");
 $co->execute([$token]); $co=$co->fetch();
 if (!$co) { http_response_code(404); echo '<h1>Contrato no encontrado</h1>'; exit; }
+
+function contratoRenderText($value) {
+    $text = (string) $value;
+    $text = str_replace(["\r\n", "\r"], "\n", $text);
+    // Compatibilidad con contratos antiguos en HTML.
+    $text = preg_replace('/<\s*br\s*\/?>/i', "\n", $text);
+    $text = preg_replace('/<\s*\/\s*(p|div|li|h[1-6])\s*>/i', "\n", $text);
+    $text = html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $text = preg_replace("/\n{3,}/", "\n\n", $text);
+    return trim($text);
+}
+
+$contenidoContrato = contratoRenderText($co['contenido'] ?? '');
 
 if ($co['estado'] === 'enviado') {
     $db->prepare("UPDATE contratos SET estado='visto' WHERE id=?")->execute([$co['id']]);
@@ -35,10 +49,18 @@ $config = $db->query("SELECT empresa_nombre FROM configuracion_pagos LIMIT 1")->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>*{font-family:'Inter',sans-serif}body{background:#f8fafc}
     #signPad{border:2px dashed #cbd5e1;border-radius:8px;cursor:crosshair}
+    .pdf-help{font-size:.85rem;color:#64748b}
+    @page{size:A4;margin:16mm}
     @media print{.no-print{display:none!important}}</style>
 </head><body>
 
 <div class="container py-4" style="max-width:850px">
+
+    <?php if ($pdfMode): ?>
+    <div class="alert alert-info no-print">
+        <strong>Exportando a PDF:</strong> Se abrirá el diálogo de impresión. Elige "Guardar como PDF".
+    </div>
+    <?php endif; ?>
 
     <?php if ($firmado): ?>
     <div class="card border-0 shadow-sm text-center p-5 mb-4">
@@ -53,8 +75,8 @@ $config = $db->query("SELECT empresa_nombre FROM configuracion_pagos LIMIT 1")->
             <h5 class="fw-bold mb-0"><?= htmlspecialchars($config['empresa_nombre']??'') ?></h5>
             <small class="text-muted"><?= htmlspecialchars($co['titulo']) ?></small>
         </div>
-        <div class="card-body p-4 p-md-5" style="line-height:1.8">
-            <?= $co['contenido'] ?>
+        <div class="card-body p-4 p-md-5" style="line-height:1.8; white-space: pre-line;">
+            <?= htmlspecialchars($contenidoContrato, ENT_QUOTES, 'UTF-8') ?>
         </div>
 
         <?php if ($co['firma_imagen']): ?>
@@ -102,6 +124,19 @@ $config = $db->query("SELECT empresa_nombre FROM configuracion_pagos LIMIT 1")->
     </script>
     <?php endif; ?>
 
-    <div class="text-center mt-3 no-print"><button class="btn btn-outline-secondary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Imprimir</button></div>
+    <div class="text-center mt-3 no-print d-flex justify-content-center gap-2">
+        <button class="btn btn-outline-secondary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Imprimir</button>
+        <a class="btn btn-outline-danger btn-sm" href="contrato.php?token=<?= urlencode($token) ?>&pdf=1"><i class="bi bi-filetype-pdf"></i> Exportar PDF</a>
+    </div>
+    <div class="text-center mt-2 no-print pdf-help">Para PDF en escritorio: en la impresora selecciona "Guardar como PDF".</div>
 </div>
+<?php if ($pdfMode): ?>
+<script>
+window.addEventListener('load', function () {
+    setTimeout(function () {
+        window.print();
+    }, 250);
+});
+</script>
+<?php endif; ?>
 </body></html>

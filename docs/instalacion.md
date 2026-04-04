@@ -1,4 +1,4 @@
-# Guía de Instalación - InmoCRM
+# Guía de Instalación - Tinoprop
 
 ## 1. Requisitos Previos
 

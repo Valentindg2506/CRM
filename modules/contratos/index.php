@@ -6,20 +6,29 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 requireLogin();
 $db = getDB();
 
+// Marcar contratos vencidos automaticamente (sin tocar firmados/rechazados).
+$db->exec("UPDATE contratos SET estado='expirado' WHERE fecha_expiracion IS NOT NULL AND fecha_expiracion < CURDATE() AND estado IN ('borrador','enviado','visto')");
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
     $a = post('accion');
     if ($a === 'eliminar') { $db->prepare("DELETE FROM contratos WHERE id=?")->execute([intval(post('cid'))]); setFlash('success','Eliminado.'); }
     if ($a === 'enviar') {
         $cid = intval(post('cid'));
-        $db->prepare("UPDATE contratos SET estado='enviado' WHERE id=? AND estado='borrador'")->execute([$cid]);
         $c = $db->prepare("SELECT co.*, cl.email FROM contratos co LEFT JOIN clientes cl ON co.cliente_id=cl.id WHERE co.id=?"); $c->execute([$cid]); $c=$c->fetch();
-        if ($c && $c['email']) {
+        if ($c && !empty($c['email']) && $c['estado'] === 'borrador') {
+            $db->prepare("UPDATE contratos SET estado='enviado' WHERE id=?")->execute([$cid]);
             $link = APP_URL . '/contrato.php?token=' . $c['token'];
             $body = "Se le ha enviado un contrato: <a href='{$link}'>Ver y firmar contrato</a>";
             @mail($c['email'], 'Contrato: '.$c['titulo'], $body, "Content-type: text/html; charset=UTF-8\r\n");
+            setFlash('success','Contrato enviado.');
+        } elseif ($c && empty($c['email'])) {
+            setFlash('danger','No se puede enviar: el cliente no tiene email.');
+        } elseif ($c && $c['estado'] !== 'borrador') {
+            setFlash('warning','Solo se pueden enviar contratos en borrador.');
+        } else {
+            setFlash('danger','Contrato no encontrado.');
         }
-        setFlash('success','Contrato enviado.');
     }
     header('Location: index.php'); exit;
 }
@@ -57,7 +66,9 @@ $estadoClases = ['borrador'=>'secondary','enviado'=>'primary','visto'=>'info','f
                 <td class="text-end">
                     <div class="d-flex gap-1 justify-content-end">
                         <a href="form.php?id=<?= $co['id'] ?>" class="btn btn-xs btn-outline-primary"><i class="bi bi-pencil"></i></a>
-                        <button class="btn btn-xs btn-outline-info" onclick="navigator.clipboard.writeText('<?= APP_URL ?>/contrato.php?token=<?= $co['token'] ?>')"><i class="bi bi-link"></i></button>
+                        <a href="<?= APP_URL ?>/contrato.php?token=<?= urlencode($co['token']) ?>" target="_blank" class="btn btn-xs btn-outline-dark" title="Ver contrato"><i class="bi bi-eye"></i></a>
+                        <a href="<?= APP_URL ?>/contrato.php?token=<?= urlencode($co['token']) ?>&pdf=1" target="_blank" class="btn btn-xs btn-outline-secondary" title="Exportar PDF"><i class="bi bi-filetype-pdf"></i></a>
+                        <button type="button" class="btn btn-xs btn-outline-info" title="Copiar enlace" onclick="copyContratoLink('<?= APP_URL ?>/contrato.php?token=<?= $co['token'] ?>')"><i class="bi bi-link"></i></button>
                         <?php if ($co['estado']==='borrador'): ?>
                         <form method="POST"><?= csrfField() ?><input type="hidden" name="accion" value="enviar"><input type="hidden" name="cid" value="<?= $co['id'] ?>"><button class="btn btn-xs btn-outline-success"><i class="bi bi-send"></i></button></form>
                         <?php endif; ?>
@@ -72,5 +83,19 @@ $estadoClases = ['borrador'=>'secondary','enviado'=>'primary','visto'=>'info','f
 </div>
 <?php endif; ?>
 <style>.btn-xs{padding:2px 6px;font-size:.7rem}</style>
+
+<script>
+function copyContratoLink(link) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(function () {
+            alert('Enlace copiado al portapapeles');
+        }).catch(function () {
+            window.prompt('Copia este enlace:', link);
+        });
+    } else {
+        window.prompt('Copia este enlace:', link);
+    }
+}
+</script>
 
 <?php require_once __DIR__ . '/../../includes/footer.php'; ?>

@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/config/database.php';
+if (session_status() === PHP_SESSION_NONE) session_start();
 $db = getDB();
 
 $token = trim($_GET['token'] ?? '');
@@ -17,16 +18,104 @@ $config = $db->query("SELECT * FROM configuracion_pagos LIMIT 1")->fetch(PDO::FE
 $lineas = json_decode($f['lineas'], true) ?: [];
 $moneda = $config['moneda'] ?? 'EUR';
 $stripeKey = $config['stripe_public_key'] ?? '';
+$stripeSecret = $config['stripe_secret_key'] ?? '';
 $empresa = $config['empresa_nombre'] ?? 'Empresa';
+$paymentError = '';
+$paymentPending = false;
+
+if (empty($_SESSION['public_csrf_token'])) {
+    $_SESSION['public_csrf_token'] = bin2hex(random_bytes(32));
+}
+$publicCsrfToken = $_SESSION['public_csrf_token'];
 
 // Handle Stripe payment confirmation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['payment_intent'])) {
-    $db->prepare("UPDATE facturas SET estado = 'pagada', metodo_pago = 'stripe', fecha_pago = NOW() WHERE id = ?")->execute([$f['id']]);
-    header('Location: pagar.php?token=' . urlencode($token) . '&ok=1');
-    exit;
+    $csrf = $_POST['public_csrf_token'] ?? '';
+    if (!hash_equals($publicCsrfToken, $csrf)) {
+        http_response_code(403);
+        echo '<h1>Solicitud invalida</h1>';
+        exit;
+    }
+    if (empty($stripeKey) || empty($stripeSecret) || in_array($f['estado'], ['pagada', 'cancelada'], true)) {
+        http_response_code(400);
+        echo '<h1>Operacion no permitida</h1>';
+        exit;
+    }
+
+    $stripeToken = trim($_POST['payment_intent'] ?? '');
+    if ($stripeToken === '') {
+        $paymentError = 'No se recibio token de pago.';
+    } elseif (!function_exists('curl_init')) {
+        $paymentError = 'El servidor no tiene soporte cURL para procesar pagos.';
+    } else {
+        $amountCents = (int) round(floatval($f['total']) * 100);
+        if ($amountCents <= 0) {
+            $paymentError = 'Importe de factura invalido.';
+        } else {
+            $payload = http_build_query([
+                'amount' => $amountCents,
+                'currency' => strtolower($moneda),
+                'source' => $stripeToken,
+                'description' => 'Pago factura ' . ($f['numero'] ?? ''),
+                'metadata[factura_id]' => (string) $f['id'],
+                'metadata[token_pago]' => $token,
+            ]);
+
+            $idempotencyKey = 'factura_' . $f['id'] . '_token_' . hash('sha256', $token);
+            $ch = curl_init('https://api.stripe.com/v1/charges');
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => $payload,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_USERPWD => $stripeSecret . ':',
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/x-www-form-urlencoded',
+                    'Idempotency-Key: ' . $idempotencyKey,
+                ],
+            ]);
+
+            $resp = curl_exec($ch);
+            $curlErr = curl_error($ch);
+            $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($resp === false) {
+                $paymentError = 'No se pudo conectar con Stripe.';
+                if (function_exists('logError')) {
+                    logError('Stripe charge transport error: ' . $curlErr);
+                } else {
+                    error_log('Stripe charge transport error: ' . $curlErr);
+                }
+            } else {
+                $charge = json_decode($resp, true);
+                $succeeded = $httpCode >= 200 && $httpCode < 300 && !empty($charge['paid']) && ($charge['status'] ?? '') === 'succeeded';
+
+                if ($succeeded) {
+                    // Webhook-first: el estado final se confirma solo por api/stripe_webhook.php
+                    $stripePaymentId = $charge['id'] ?? null;
+                    if (!empty($stripePaymentId)) {
+                        $db->prepare("UPDATE facturas SET stripe_payment_id = ?, metodo_pago = 'stripe' WHERE id = ? AND estado <> 'pagada' AND estado <> 'cancelada'")
+                           ->execute([$stripePaymentId, $f['id']]);
+                    }
+                    header('Location: pagar.php?token=' . urlencode($token) . '&pending=1');
+                    exit;
+                }
+
+                $stripeMsg = $charge['error']['message'] ?? 'Pago rechazado por Stripe.';
+                $paymentError = $stripeMsg;
+                if (function_exists('logError')) {
+                    logError('Stripe charge error: HTTP ' . $httpCode . ' - ' . $stripeMsg);
+                } else {
+                    error_log('Stripe charge error: HTTP ' . $httpCode . ' - ' . $stripeMsg);
+                }
+            }
+        }
+    }
 }
 
 $showSuccess = isset($_GET['ok']) || ($f['estado'] === 'pagada');
+$paymentPending = isset($_GET['pending']) && !$showSuccess;
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -62,6 +151,12 @@ $showSuccess = isset($_GET['ok']) || ($f['estado'] === 'pagada');
             <p class="text-muted mb-0">Factura <?= htmlspecialchars($f['numero']) ?></p>
         </div>
         <div class="card-body">
+            <?php if ($paymentPending): ?>
+            <div class="alert alert-warning" role="alert">
+                Pago procesado. Estamos esperando confirmacion segura del banco via webhook.
+                Si en unos segundos no cambia, recarga esta pagina.
+            </div>
+            <?php endif; ?>
             <div class="d-flex justify-content-between mb-3">
                 <div>
                     <small class="text-muted">Cliente</small>
@@ -112,7 +207,7 @@ $showSuccess = isset($_GET['ok']) || ($f['estado'] === 'pagada');
         <div class="card-footer bg-white p-4">
             <div id="stripe-payment">
                 <div id="card-element" class="form-control mb-3" style="padding:12px"></div>
-                <div id="card-errors" class="text-danger small mb-2"></div>
+                <div id="card-errors" class="text-danger small mb-2"><?= !empty($paymentError) ? htmlspecialchars($paymentError) : '' ?></div>
                 <button id="payBtn" class="btn btn-success w-100 btn-lg">
                     <i class="bi bi-lock"></i> Pagar <?= number_format(floatval($f['total']), 2, ',', '.') ?> <?= $moneda ?>
                 </button>
@@ -141,6 +236,9 @@ $showSuccess = isset($_GET['ok']) || ($f['estado'] === 'pagada');
                 const input = document.createElement('input');
                 input.type = 'hidden'; input.name = 'payment_intent'; input.value = token.id;
                 form.appendChild(input);
+                const csrf = document.createElement('input');
+                csrf.type = 'hidden'; csrf.name = 'public_csrf_token'; csrf.value = '<?= htmlspecialchars($publicCsrfToken) ?>';
+                form.appendChild(csrf);
                 document.body.appendChild(form);
                 form.submit();
             }
@@ -165,7 +263,7 @@ $showSuccess = isset($_GET['ok']) || ($f['estado'] === 'pagada');
     <?php endif; ?>
 
     <div class="text-center mt-3">
-        <small class="text-muted">Powered by InmoCRM</small>
+        <small class="text-muted">Powered by Tinoprop</small>
     </div>
 </div>
 

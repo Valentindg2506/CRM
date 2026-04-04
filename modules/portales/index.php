@@ -43,6 +43,12 @@ if ($propiedadId) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $propiedadId) {
     verifyCsrf();
 
+    if (!isAdmin() && intval($prop['agente_id']) !== intval(currentUserId())) {
+        setFlash('danger', 'No tienes permisos para gestionar portales de esta propiedad.');
+        header('Location: index.php?propiedad_id=' . $propiedadId);
+        exit;
+    }
+
     $portalId = intval(post('portal_id'));
     $accion = post('accion');
 

@@ -683,7 +683,7 @@ $tempColors = ['frio' => '#3b82f6', 'templado' => '#f59e0b', 'caliente' => '#ef4
         <div class="card">
             <div class="card-header py-2 d-flex justify-content-between align-items-center">
                 <span class="section-title" style="background: #dbeafe; color: #1e40af; font-size: 0.68rem;">
-                    <i class="bi bi-people"></i> CLIENTES — Contactar Hoy
+                    <i class="bi bi-people"></i> PSI — Clientes
                 </span>
                 <a href="<?= APP_URL ?>/modules/clientes/index.php" class="btn btn-sm btn-outline-primary">Ver todos</a>
             </div>

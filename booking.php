@@ -341,7 +341,7 @@ $descripcion = htmlspecialchars($config['descripcion'] ?? '');
     </div>
 
     <div class="footer-text">
-        Powered by InmoCRM
+        Powered by Tinoprop
     </div>
 
     <script>

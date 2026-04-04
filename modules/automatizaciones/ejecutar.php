@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/helpers.php';
+require_once __DIR__ . '/../../includes/email.php';
 if (session_status() === PHP_SESSION_NONE) session_start();
 requireLogin();
 
@@ -38,21 +39,188 @@ if ($auto['trigger_tipo'] !== 'manual') {
     exit;
 }
 
+if (!isAdmin() && intval($auto['created_by']) !== intval(currentUserId())) {
+    setFlash('danger', 'No tienes permisos para ejecutar esta automatizacion.');
+    header('Location: index.php');
+    exit;
+}
+
 if (!$auto['activo']) {
     setFlash('warning', 'La automatizacion esta desactivada. Activala antes de ejecutarla.');
     header('Location: index.php');
     exit;
 }
 
-// Insert log entry
-$stmtLog = $db->prepare("INSERT INTO automatizacion_log (automatizacion_id, estado, detalles, entidad_tipo) VALUES (?, 'exito', ?, 'manual')");
-$stmtLog->execute([$id, 'Ejecucion manual por ' . currentUserName()]);
+// Cargar acciones ordenadas
+$stmtAcc = $db->prepare("SELECT * FROM automatizacion_acciones WHERE automatizacion_id = ? ORDER BY orden ASC, id ASC");
+$stmtAcc->execute([$id]);
+$acciones = $stmtAcc->fetchAll();
 
-// Update execution count and last execution date
-$stmtUpd = $db->prepare("UPDATE automatizaciones SET ejecuciones = ejecuciones + 1, ultima_ejecucion = NOW() WHERE id = ?");
-$stmtUpd->execute([$id]);
+if (empty($acciones)) {
+    $db->prepare("INSERT INTO automatizacion_log (automatizacion_id, estado, detalles, entidad_tipo) VALUES (?, 'error', ?, 'manual')")
+        ->execute([$id, 'Ejecucion manual sin acciones configuradas.']);
+    $db->prepare("UPDATE automatizaciones SET ultima_ejecucion = NOW() WHERE id = ?")->execute([$id]);
+    setFlash('danger', 'La automatizacion no tiene acciones configuradas.');
+    header('Location: index.php');
+    exit;
+}
 
-registrarActividad('ejecutar', 'automatizacion', $id, 'Ejecucion manual: ' . $auto['nombre']);
-setFlash('success', 'Automatizacion "' . sanitize($auto['nombre']) . '" ejecutada correctamente.');
+$stmtOwner = $db->prepare("SELECT id, nombre, apellidos, email FROM usuarios WHERE id = ? LIMIT 1");
+$stmtOwner->execute([intval($auto['created_by'])]);
+$owner = $stmtOwner->fetch();
+
+$successCount = 0;
+$errorCount = 0;
+$pendingCount = 0;
+
+foreach ($acciones as $acc) {
+    $estado = 'pendiente';
+    $detalle = 'Accion no ejecutada.';
+    $config = json_decode($acc['configuracion'] ?? '{}', true);
+    if (!is_array($config)) {
+        $config = [];
+    }
+
+    try {
+        switch ($acc['tipo']) {
+            case 'crear_tarea':
+                $titulo = trim((string)($config['titulo'] ?? 'Tarea automatica: ' . $auto['nombre']));
+                if ($titulo === '') {
+                    $titulo = 'Tarea automatica: ' . $auto['nombre'];
+                }
+                $descripcion = trim((string)($config['descripcion'] ?? 'Generada por automatizacion manual.'));
+                $prioridad = (string)($config['prioridad'] ?? 'media');
+                if (!in_array($prioridad, ['baja', 'media', 'alta', 'urgente'], true)) {
+                    $prioridad = 'media';
+                }
+                $asignadoA = intval($config['asignar_a'] ?? 0);
+                if ($asignadoA <= 0) {
+                    $asignadoA = intval($auto['created_by']);
+                }
+
+                $dueAt = date('Y-m-d H:i:s', strtotime('+1 day'));
+                $stmtTask = $db->prepare("INSERT INTO tareas (titulo, descripcion, tipo, prioridad, estado, fecha_vencimiento, asignado_a, creado_por) VALUES (?, ?, 'otro', ?, 'pendiente', ?, ?, ?)");
+                $stmtTask->execute([$titulo, $descripcion, $prioridad, $dueAt, $asignadoA, intval(currentUserId())]);
+                $tareaId = intval($db->lastInsertId());
+
+                $estado = 'exito';
+                $detalle = 'Tarea #' . $tareaId . ' creada y asignada al usuario #' . $asignadoA . '.';
+                break;
+
+            case 'notificar':
+                $tituloNotif = trim((string)($config['titulo'] ?? 'Automatizacion ejecutada'));
+                if ($tituloNotif === '') {
+                    $tituloNotif = 'Automatizacion ejecutada';
+                }
+                $mensajeNotif = trim((string)($config['mensaje'] ?? ('Automatizacion: ' . $auto['nombre'])));
+                $textoNotif = $tituloNotif . ($mensajeNotif !== '' ? (' - ' . $mensajeNotif) : '');
+                $usuarioNotif = intval($config['usuario_id'] ?? 0);
+                if ($usuarioNotif <= 0) {
+                    $usuarioNotif = intval($auto['created_by']);
+                }
+
+                $stmtNotif = $db->prepare("INSERT INTO notificaciones (usuario_id, titulo, enlace) VALUES (?, ?, ?)");
+                $stmtNotif->execute([$usuarioNotif, $textoNotif, 'modules/automatizaciones/log.php?id=' . $id]);
+
+                $estado = 'exito';
+                $detalle = 'Notificacion creada para usuario #' . $usuarioNotif . '.';
+                break;
+
+            case 'enviar_email':
+                $destinatario = '';
+                $tipoDest = (string)($config['destinatario'] ?? 'agente_asignado');
+                if ($tipoDest === 'email_custom' && !empty($config['email'])) {
+                    $destinatario = trim((string)$config['email']);
+                }
+                if ($destinatario === '' && !empty($owner['email'])) {
+                    // Sin contexto de entidad en ejecucion manual: fallback al creador de la automatizacion.
+                    $destinatario = trim((string)$owner['email']);
+                }
+
+                if ($destinatario === '') {
+                    $estado = 'pendiente';
+                    $detalle = 'No se pudo resolver destinatario de email para ejecucion manual.';
+                    break;
+                }
+
+                $asunto = trim((string)($config['asunto'] ?? ('Automatizacion: ' . $auto['nombre'])));
+                if ($asunto === '') {
+                    $asunto = 'Automatizacion: ' . $auto['nombre'];
+                }
+                $mensaje = trim((string)($config['mensaje'] ?? 'Ejecucion manual de automatizacion.'));
+                if ($mensaje === '') {
+                    $mensaje = 'Ejecucion manual de automatizacion.';
+                }
+
+                $okMail = enviarEmail($destinatario, $asunto, nl2br(sanitize($mensaje)), true);
+                if ($okMail) {
+                    $estado = 'exito';
+                    $detalle = 'Email enviado a ' . $destinatario . '.';
+                } else {
+                    $estado = 'error';
+                    $detalle = 'Fallo al enviar email a ' . $destinatario . '.';
+                }
+                break;
+
+            case 'esperar':
+                $estado = 'pendiente';
+                $detalle = 'Accion de espera omitida en ejecucion manual inmediata.';
+                break;
+
+            case 'enviar_whatsapp':
+            case 'cambiar_estado_propiedad':
+            case 'asignar_agente':
+            case 'mover_pipeline':
+                $estado = 'pendiente';
+                $detalle = 'Accion "' . $acc['tipo'] . '" requiere contexto de entidad y no se ejecuta en modo manual directo.';
+                break;
+
+            default:
+                $estado = 'error';
+                $detalle = 'Tipo de accion no soportado: ' . $acc['tipo'];
+                break;
+        }
+    } catch (Throwable $e) {
+        $estado = 'error';
+        $detalle = 'Excepcion en accion "' . $acc['tipo'] . '": ' . $e->getMessage();
+    }
+
+    if ($estado === 'exito') {
+        $successCount++;
+    } elseif ($estado === 'error') {
+        $errorCount++;
+    } else {
+        $pendingCount++;
+    }
+
+    $stmtLogAcc = $db->prepare("INSERT INTO automatizacion_log (automatizacion_id, accion_id, estado, detalles, entidad_tipo) VALUES (?, ?, ?, ?, 'manual')");
+    $stmtLogAcc->execute([$id, intval($acc['id']), $estado, $detalle]);
+}
+
+$estadoFinal = 'pendiente';
+if ($errorCount > 0) {
+    $estadoFinal = 'error';
+} elseif ($successCount > 0) {
+    $estadoFinal = 'exito';
+}
+
+$resumen = 'Ejecucion manual por ' . currentUserName() . '. Exito: ' . $successCount . ', Error: ' . $errorCount . ', Pendiente: ' . $pendingCount . '.';
+$db->prepare("INSERT INTO automatizacion_log (automatizacion_id, estado, detalles, entidad_tipo) VALUES (?, ?, ?, 'manual')")
+    ->execute([$id, $estadoFinal, $resumen]);
+
+// Contadores reales de ejecucion y fecha
+$db->prepare("UPDATE automatizaciones SET ejecuciones = ejecuciones + 1, ultima_ejecucion = NOW() WHERE id = ?")
+    ->execute([$id]);
+
+registrarActividad('ejecutar', 'automatizacion', $id, $resumen);
+
+if ($estadoFinal === 'exito') {
+    setFlash('success', 'Automatizacion ejecutada. ' . $resumen);
+} elseif ($estadoFinal === 'error') {
+    setFlash('warning', 'Automatizacion ejecutada con errores. ' . $resumen);
+} else {
+    setFlash('info', 'Automatizacion ejecutada parcialmente. ' . $resumen);
+}
+
 header('Location: index.php');
 exit;

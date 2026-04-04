@@ -16,6 +16,13 @@ if ($id) {
         header('Location: index.php');
         exit;
     }
+
+    if (!isAdmin() && intval($auto['created_by']) !== intval(currentUserId())) {
+        setFlash('danger', 'No tienes permisos para editar esta automatizacion.');
+        header('Location: index.php');
+        exit;
+    }
+
     $pageTitle = 'Editar Automatizacion';
 
     $stmtAcc = $db->prepare("SELECT * FROM automatizacion_acciones WHERE automatizacion_id = ? ORDER BY orden ASC");
@@ -46,6 +53,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($id) {
+        if (!isAdmin()) {
+            $ownerStmt = $db->prepare("SELECT created_by FROM automatizaciones WHERE id = ? LIMIT 1");
+            $ownerStmt->execute([$id]);
+            $ownerId = intval($ownerStmt->fetchColumn());
+            if ($ownerId !== intval(currentUserId())) {
+                setFlash('danger', 'No tienes permisos para editar esta automatizacion.');
+                header('Location: index.php');
+                exit;
+            }
+        }
+
         $stmt = $db->prepare("UPDATE automatizaciones SET nombre = ?, descripcion = ?, trigger_tipo = ?, activo = ?, updated_at = NOW() WHERE id = ?");
         $stmt->execute([$nombre, $descripcion, $trigger_tipo, $activo, $id]);
         registrarActividad('editar', 'automatizacion', $id, 'Automatizacion: ' . $nombre);

@@ -108,7 +108,13 @@ $totalPipelines = count($pipelines);
                         <ul class="dropdown-menu dropdown-menu-end">
                             <li><a class="dropdown-item" href="config.php?id=<?= $pipe['id'] ?>"><i class="bi bi-gear"></i> Configurar</a></li>
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item text-danger" href="delete.php?id=<?= $pipe['id'] ?>&csrf=<?= csrfToken() ?>" data-confirm="Seguro que deseas eliminar esta pipeline y todos sus items?"><i class="bi bi-trash"></i> Eliminar</a></li>
+                            <li>
+                                <form method="POST" action="delete.php" class="px-3" onsubmit="return confirm('Seguro que deseas eliminar esta pipeline y todos sus items?')">
+                                    <?= csrfField() ?>
+                                    <input type="hidden" name="id" value="<?= intval($pipe['id']) ?>">
+                                    <button type="submit" class="dropdown-item text-danger px-0"><i class="bi bi-trash"></i> Eliminar</button>
+                                </form>
+                            </li>
                         </ul>
                     </div>
                 </div>

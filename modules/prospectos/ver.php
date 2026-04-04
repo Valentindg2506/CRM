@@ -160,7 +160,11 @@ $tiposHistorial = [
         </form>
         <?php endif; ?>
         <a href="form.php?id=<?= $id ?>" class="btn btn-outline-primary"><i class="bi bi-pencil-square"></i> Formulario Completo</a>
-        <a href="delete.php?id=<?= $id ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-danger" data-confirm="Eliminar este prospecto?"><i class="bi bi-trash"></i></a>
+        <form method="POST" action="delete.php" class="d-inline" onsubmit="return confirm('Eliminar este prospecto?')">
+            <?= csrfField() ?>
+            <input type="hidden" name="id" value="<?= intval($id) ?>">
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i></button>
+        </form>
     </div>
 </div>
 

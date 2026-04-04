@@ -11,6 +11,18 @@ $db = getDB();
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'toggle') {
     verifyCsrf();
     $id = intval(post('id'));
+
+    if (!isAdmin()) {
+        $ownerStmt = $db->prepare("SELECT created_by FROM automatizaciones WHERE id = ? LIMIT 1");
+        $ownerStmt->execute([$id]);
+        $ownerId = intval($ownerStmt->fetchColumn());
+        if ($ownerId !== intval(currentUserId())) {
+            setFlash('danger', 'No tienes permisos sobre esta automatizacion.');
+            header('Location: index.php');
+            exit;
+        }
+    }
+
     $stmt = $db->prepare("UPDATE automatizaciones SET activo = NOT activo WHERE id = ?");
     $stmt->execute([$id]);
     registrarActividad('actualizar', 'automatizacion', $id, 'Toggle estado automatizacion');
@@ -23,6 +35,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'toggle') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'duplicar') {
     verifyCsrf();
     $id = intval(post('id'));
+
+    if (!isAdmin()) {
+        $ownerStmt = $db->prepare("SELECT created_by FROM automatizaciones WHERE id = ? LIMIT 1");
+        $ownerStmt->execute([$id]);
+        $ownerId = intval($ownerStmt->fetchColumn());
+        if ($ownerId !== intval(currentUserId())) {
+            setFlash('danger', 'No tienes permisos sobre esta automatizacion.');
+            header('Location: index.php');
+            exit;
+        }
+    }
+
     $orig = $db->prepare("SELECT * FROM automatizaciones WHERE id=?"); $orig->execute([$id]); $orig=$orig->fetch();
     if ($orig) {
         $db->prepare("INSERT INTO automatizaciones (nombre, descripcion, trigger_tipo, condiciones, activo, created_by) VALUES (?,?,?,?,0,?)")
@@ -243,7 +267,11 @@ $totalAcciones = array_sum($accionesCount);
                     <input type="hidden" name="id" value="<?= $auto['id'] ?>">
                     <button class="btn btn-sm btn-outline-secondary" title="Duplicar"><i class="bi bi-copy"></i></button>
                 </form>
-                <a href="delete.php?id=<?= $auto['id'] ?>&csrf=<?= csrfToken() ?>" class="btn btn-sm btn-outline-danger" data-confirm="Eliminar esta automatizacion?" title="Eliminar"><i class="bi bi-trash"></i></a>
+                <form method="POST" action="delete.php" class="d-inline" onsubmit="return confirm('Eliminar esta automatizacion?')">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="id" value="<?= intval($auto['id']) ?>">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Eliminar"><i class="bi bi-trash"></i></button>
+                </form>
             </div>
         </div>
     </div>

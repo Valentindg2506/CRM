@@ -82,7 +82,10 @@ $queries = [
     "CREATE TABLE IF NOT EXISTS contrato_plantillas (
         id INT AUTO_INCREMENT PRIMARY KEY,
         nombre VARCHAR(200) NOT NULL,
+        tipo ENUM('texto','pdf') NOT NULL DEFAULT 'texto',
         contenido LONGTEXT,
+        archivo_path VARCHAR(255) DEFAULT NULL,
+        archivo_nombre VARCHAR(255) DEFAULT NULL,
         categoria VARCHAR(100) DEFAULT 'general',
         activo TINYINT(1) DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP

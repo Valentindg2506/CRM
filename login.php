@@ -18,6 +18,10 @@ $blocked = false;
 $remaining = 0;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Verificar CSRF
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== ($_SESSION['csrf_token'] ?? '')) {
+        $error = 'Token de seguridad invalido. Recarga la pagina e intenta de nuevo.';
+    } else {
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
 
@@ -43,6 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+    } // end CSRF else
 }
 ?>
 <!DOCTYPE html>
@@ -60,8 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="login-card">
             <div class="text-center mb-4">
                 <div class="login-logo"><i class="bi bi-buildings"></i></div>
-                <h2>InmoCRM</h2>
-                <p class="text-muted">CRM Inmobiliario para España</p>
+                <h2><?= APP_NAME ?></h2>
+                <p class="text-muted">Plataforma Inmobiliaria</p>
             </div>
 
             <?php if ($error): ?>
@@ -74,6 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
 
             <form method="POST" action="login.php" <?= $blocked ? 'class="opacity-50"' : '' ?>>
+                <?= csrfField() ?>
                 <div class="mb-3">
                     <label class="form-label">Email</label>
                     <div class="input-group">

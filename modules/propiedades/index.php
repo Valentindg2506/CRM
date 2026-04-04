@@ -171,7 +171,11 @@ $baseUrl = 'index.php?tipo=' . urlencode($filtroTipo) . '&operacion=' . urlencod
                         <div class="btn-group btn-group-sm">
                             <a href="ver.php?id=<?= $p['id'] ?>" class="btn btn-outline-primary" title="Ver"><i class="bi bi-eye"></i></a>
                             <a href="form.php?id=<?= $p['id'] ?>" class="btn btn-outline-secondary" title="Editar"><i class="bi bi-pencil"></i></a>
-                            <a href="delete.php?id=<?= $p['id'] ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-danger" title="Eliminar" data-confirm="Seguro que deseas eliminar esta propiedad?"><i class="bi bi-trash"></i></a>
+                            <form method="POST" action="delete.php" class="d-inline" onsubmit="return confirm('Seguro que deseas eliminar esta propiedad?')">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="id" value="<?= intval($p['id']) ?>">
+                                <button type="submit" class="btn btn-outline-danger" title="Eliminar"><i class="bi bi-trash"></i></button>
+                            </form>
                         </div>
                     </td>
                 </tr>

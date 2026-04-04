@@ -41,6 +41,16 @@ if (!$item) {
     exit;
 }
 
+if (!isAdmin()) {
+    $ownerStmt = $db->prepare("SELECT created_by FROM pipelines WHERE id = ? LIMIT 1");
+    $ownerStmt->execute([$item['pipeline_id']]);
+    $ownerId = intval($ownerStmt->fetchColumn());
+    if ($ownerId !== intval(currentUserId())) {
+        echo json_encode(['success' => false, 'error' => 'Sin permisos para mover este item']);
+        exit;
+    }
+}
+
 // Verificar que la etapa existe y pertenece a la misma pipeline
 $stmtEtapa = $db->prepare("SELECT * FROM pipeline_etapas WHERE id = ? AND pipeline_id = ?");
 $stmtEtapa->execute([$etapaId, $item['pipeline_id']]);

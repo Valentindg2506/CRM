@@ -231,6 +231,103 @@ function getFlash() {
 }
 
 /**
+ * Crear notificaciones automaticas para prospectos con contacto vencido o para hoy.
+ * Evita duplicados por usuario/prospecto en el mismo dia.
+ */
+function generarNotificacionesProspectosVencidos($userId = null) {
+    try {
+        if ($userId === null && function_exists('currentUserId')) {
+            $userId = intval(currentUserId());
+        }
+        $userId = intval($userId);
+        if ($userId <= 0) {
+            return;
+        }
+
+        $db = getDB();
+        $isAdm = function_exists('isAdmin') ? isAdmin() : false;
+
+        $sql = "SELECT p.id, p.nombre, p.referencia, p.fecha_proximo_contacto
+                FROM prospectos p
+                                WHERE p.activo = 1
+                                    AND p.fecha_proximo_contacto IS NOT NULL
+                                    AND p.fecha_proximo_contacto <= CURDATE()
+                  AND p.etapa NOT IN ('captado','descartado')";
+        $params = [];
+
+        if (!$isAdm) {
+            $sql .= " AND p.agente_id = ?";
+            $params[] = $userId;
+        }
+
+        $sql .= " ORDER BY p.fecha_proximo_contacto ASC LIMIT 100";
+
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        if (empty($rows)) {
+            return;
+        }
+
+        $stmtInsert = $db->prepare(
+            "INSERT INTO notificaciones (usuario_id, titulo, mensaje, tipo, enlace, leida, created_at)
+             SELECT ?, ?, ?, 'aviso', ?, 0, NOW()
+             WHERE NOT EXISTS (
+                 SELECT 1
+                 FROM notificaciones
+                 WHERE usuario_id = ?
+                   AND enlace = ?
+                   AND DATE(created_at) = CURDATE()
+             )"
+        );
+
+        foreach ($rows as $r) {
+            $pid = intval($r['id']);
+            if ($pid <= 0) {
+                continue;
+            }
+
+            $nombre = trim((string)($r['nombre'] ?? 'Prospecto'));
+            if ($nombre === '') {
+                $nombre = 'Prospecto';
+            }
+            $ref = trim((string)($r['referencia'] ?? ''));
+            $fechaRaw = (string)($r['fecha_proximo_contacto'] ?? '');
+
+            $dias = 0;
+            $esHoy = false;
+            if ($fechaRaw !== '') {
+                try {
+                    $f = new DateTime($fechaRaw);
+                    $h = new DateTime('today');
+                    $dias = (int)$h->diff($f)->days;
+                    $esHoy = ($f->format('Y-m-d') === $h->format('Y-m-d'));
+                } catch (Exception $e) {
+                    $dias = 0;
+                    $esHoy = false;
+                }
+            }
+
+            $etiquetaRef = $ref !== '' ? (' (' . $ref . ')') : '';
+            $titulo = 'Recordatorio: contactar prospecto ' . $nombre . $etiquetaRef;
+            if ($esHoy) {
+                $mensaje = 'Seguimiento programado para hoy.';
+            } else {
+                $mensaje = $dias > 0
+                    ? ('Seguimiento vencido hace ' . $dias . ' dia(s).')
+                    : 'Seguimiento vencido.';
+            }
+            $enlace = APP_URL . '/modules/prospectos/ver.php?id=' . $pid;
+
+            $stmtInsert->execute([$userId, $titulo, $mensaje, $enlace, $userId, $enlace]);
+        }
+    } catch (Throwable $e) {
+        // No interrumpir la UI si falla la generacion de recordatorios.
+    }
+}
+
+/**
  * Token CSRF
  */
 function csrfToken() {
@@ -283,6 +380,16 @@ function getTiposPropiedad() {
  * Obtener conteo para el dashboard
  */
 function getCount($table, $where = '1=1', $params = []) {
+    // Endurece el identificador de tabla para evitar inyeccion SQL.
+    if (!is_string($table) || !preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
+        if (function_exists('logError')) {
+            logError('getCount invalid table identifier', ['table' => $table]);
+        } else {
+            error_log('getCount invalid table identifier');
+        }
+        return 0;
+    }
+
     $db = getDB();
     $stmt = $db->prepare("SELECT COUNT(*) FROM `$table` WHERE $where");
     $stmt->execute($params);

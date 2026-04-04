@@ -169,7 +169,6 @@ function exportarDatosClienteRGPD($clienteId) {
     $db = getDB();
 
     // Datos del cliente
-    $cliente = $db->prepare("SELECT * FROM clientes WHERE id = ?")->execute([$clienteId]);
     $cliente = $db->prepare("SELECT * FROM clientes WHERE id = ?");
     $cliente->execute([$clienteId]);
     $cliente = $cliente->fetch();

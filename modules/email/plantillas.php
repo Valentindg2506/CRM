@@ -9,6 +9,7 @@ $db = getDB();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
     $accion = post('accion');
+    $plantillaId = intval(post('plantilla_id'));
 
     if ($accion === 'crear' || $accion === 'editar') {
         $nombre = trim(post('nombre'));
@@ -22,22 +23,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ->execute([$nombre, $asunto, $contenido, $categoria, currentUserId()]);
                 setFlash('success', 'Plantilla creada.');
             } else {
+                if (!isAdmin()) {
+                    $ownerStmt = $db->prepare("SELECT usuario_id FROM email_plantillas WHERE id = ? LIMIT 1");
+                    $ownerStmt->execute([$plantillaId]);
+                    $ownerId = intval($ownerStmt->fetchColumn());
+                    if ($ownerId !== intval(currentUserId())) {
+                        setFlash('danger', 'No tienes permisos sobre esta plantilla.');
+                        header('Location: plantillas.php');
+                        exit;
+                    }
+                }
                 $db->prepare("UPDATE email_plantillas SET nombre=?, asunto=?, contenido=?, categoria=? WHERE id=?")
-                    ->execute([$nombre, $asunto, $contenido, $categoria, intval(post('plantilla_id'))]);
+                    ->execute([$nombre, $asunto, $contenido, $categoria, $plantillaId]);
                 setFlash('success', 'Plantilla actualizada.');
             }
         }
     }
     if ($accion === 'eliminar') {
-        $db->prepare("DELETE FROM email_plantillas WHERE id = ?")->execute([intval(post('plantilla_id'))]);
+        if (!isAdmin()) {
+            $ownerStmt = $db->prepare("SELECT usuario_id FROM email_plantillas WHERE id = ? LIMIT 1");
+            $ownerStmt->execute([$plantillaId]);
+            $ownerId = intval($ownerStmt->fetchColumn());
+            if ($ownerId !== intval(currentUserId())) {
+                setFlash('danger', 'No tienes permisos sobre esta plantilla.');
+                header('Location: plantillas.php');
+                exit;
+            }
+        }
+        $db->prepare("DELETE FROM email_plantillas WHERE id = ?")->execute([$plantillaId]);
         setFlash('success', 'Plantilla eliminada.');
     }
     if ($accion === 'toggle') {
-        $db->prepare("UPDATE email_plantillas SET activa = NOT activa WHERE id = ?")->execute([intval(post('plantilla_id'))]);
+        if (!isAdmin()) {
+            $ownerStmt = $db->prepare("SELECT usuario_id FROM email_plantillas WHERE id = ? LIMIT 1");
+            $ownerStmt->execute([$plantillaId]);
+            $ownerId = intval($ownerStmt->fetchColumn());
+            if ($ownerId !== intval(currentUserId())) {
+                setFlash('danger', 'No tienes permisos sobre esta plantilla.');
+                header('Location: plantillas.php');
+                exit;
+            }
+        }
+        $db->prepare("UPDATE email_plantillas SET activa = NOT activa WHERE id = ?")->execute([$plantillaId]);
     }
     if ($accion === 'duplicar') {
+        if (!isAdmin()) {
+            $ownerStmt = $db->prepare("SELECT usuario_id FROM email_plantillas WHERE id = ? LIMIT 1");
+            $ownerStmt->execute([$plantillaId]);
+            $ownerId = intval($ownerStmt->fetchColumn());
+            if ($ownerId !== intval(currentUserId())) {
+                setFlash('danger', 'No tienes permisos sobre esta plantilla.');
+                header('Location: plantillas.php');
+                exit;
+            }
+        }
         $orig = $db->prepare("SELECT * FROM email_plantillas WHERE id = ?");
-        $orig->execute([intval(post('plantilla_id'))]);
+        $orig->execute([$plantillaId]);
         $o = $orig->fetch();
         if ($o) {
             $db->prepare("INSERT INTO email_plantillas (nombre, asunto, contenido, categoria, usuario_id) VALUES (?,?,?,?,?)")

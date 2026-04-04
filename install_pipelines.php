@@ -29,6 +29,7 @@ $queries = [
         nombre VARCHAR(100) NOT NULL,
         color VARCHAR(7) NOT NULL DEFAULT '#64748b',
         orden INT NOT NULL DEFAULT 0,
+        permitir_conversion TINYINT(1) NOT NULL DEFAULT 0,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
@@ -41,6 +42,7 @@ $queries = [
         titulo VARCHAR(200) NOT NULL,
         propiedad_id INT NULL,
         cliente_id INT NULL,
+        prospecto_id INT NULL,
         valor DECIMAL(12,2) NULL,
         notas TEXT NULL,
         prioridad ENUM('baja','media','alta') NOT NULL DEFAULT 'media',
@@ -51,6 +53,7 @@ $queries = [
         FOREIGN KEY (etapa_id) REFERENCES pipeline_etapas(id) ON DELETE CASCADE,
         FOREIGN KEY (propiedad_id) REFERENCES propiedades(id) ON DELETE SET NULL,
         FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE SET NULL,
+        FOREIGN KEY (prospecto_id) REFERENCES prospectos(id) ON DELETE SET NULL,
         FOREIGN KEY (created_by) REFERENCES usuarios(id) ON DELETE CASCADE,
         INDEX idx_pipeline_etapa (pipeline_id, etapa_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
@@ -72,6 +75,32 @@ foreach ($queries as $sql) {
     }
 }
 
+// Migracion para instalaciones existentes
+try {
+    $checkCol = $db->query("SHOW COLUMNS FROM pipeline_items LIKE 'prospecto_id'");
+    if (!$checkCol->fetch()) {
+        $db->exec("ALTER TABLE pipeline_items ADD COLUMN prospecto_id INT NULL AFTER cliente_id");
+        $messages[] = "Columna 'prospecto_id' anadida en 'pipeline_items'.";
+    }
+} catch (PDOException $e) {
+    $success = false;
+    $messages[] = "ERROR migracion prospecto_id: " . $e->getMessage();
+}
+
+try {
+    $checkEtapasCol = $db->query("SHOW COLUMNS FROM pipeline_etapas LIKE 'permitir_conversion'");
+    if (!$checkEtapasCol->fetch()) {
+        $db->exec("ALTER TABLE pipeline_etapas ADD COLUMN permitir_conversion TINYINT(1) NOT NULL DEFAULT 0 AFTER orden");
+        $messages[] = "Columna 'permitir_conversion' anadida en 'pipeline_etapas'.";
+    }
+
+    $db->exec("UPDATE pipeline_etapas SET permitir_conversion = 1 WHERE LOWER(nombre) LIKE '%cerr%'");
+    $messages[] = "Etapas con nombre tipo 'cerrado' marcadas para conversion de prospectos.";
+} catch (PDOException $e) {
+    $success = false;
+    $messages[] = "ERROR migracion permitir_conversion: " . $e->getMessage();
+}
+
 // Si se ejecuta desde CLI
 if (php_sapi_name() === 'cli') {
     foreach ($messages as $msg) {
@@ -87,7 +116,7 @@ if (php_sapi_name() === 'cli') {
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Instalacion Pipelines - InmoCRM</title>
+    <title>Instalacion Pipelines - Tinoprop</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light">

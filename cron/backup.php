@@ -13,12 +13,12 @@ require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/backup.php';
 
 // Clave secreta para proteger el endpoint
-// Cambiar por una clave segura en produccion
-define('CRON_SECRET_KEY', 'cambiar_esta_clave_secreta_en_produccion');
+// Recomendado: definir CRON_BACKUP_KEY en .env
+$cronSecret = getEnvSecret('CRON_BACKUP_KEY', hash('sha256', DB_NAME . '|' . DB_USER . '|' . DB_PASS));
 
 // Verificar clave
 $key = $_GET['key'] ?? '';
-if ($key !== CRON_SECRET_KEY) {
+if ($key === '' || !hash_equals($cronSecret, $key)) {
     http_response_code(403);
     echo "Acceso denegado.\n";
     logError('Cron backup: acceso denegado con clave incorrecta', ['ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown']);

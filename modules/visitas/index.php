@@ -133,7 +133,11 @@ $baseUrl = 'index.php?estado=' . urlencode($filtroEstado) . '&fecha=' . urlencod
                     <td>
                         <div class="btn-group btn-group-sm">
                             <a href="form.php?id=<?= $v['id'] ?>" class="btn btn-outline-secondary"><i class="bi bi-pencil"></i></a>
-                            <a href="delete.php?id=<?= $v['id'] ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-danger" data-confirm="Eliminar esta visita?"><i class="bi bi-trash"></i></a>
+                            <form method="POST" action="delete.php" class="d-inline" onsubmit="return confirm('Eliminar esta visita?')">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="id" value="<?= intval($v['id']) ?>">
+                                <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i></button>
+                            </form>
                         </div>
                     </td>
                 </tr>

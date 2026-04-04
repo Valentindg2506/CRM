@@ -162,6 +162,9 @@ function requireLogin() {
         header('Location: ' . APP_URL . '/login.php');
         exit;
     }
+
+    // Aplicar permisos por modulo para roles personalizados.
+    enforceModuleAccessForRequest();
 }
 
 function requireAdmin() {
@@ -183,6 +186,158 @@ function currentUserName() {
 
 function currentUserRole() {
     return $_SESSION['user_rol'] ?? '';
+}
+
+/**
+ * Catalogo de modulos configurables para roles personalizados.
+ */
+function customRoleModuleCatalog() {
+    return [
+        'propiedades' => 'Propiedades',
+        'clientes' => 'Clientes',
+        'prospectos' => 'Prospectos',
+        'visitas' => 'Visitas',
+        'tareas' => 'Tareas',
+        'documentos' => 'Documentos',
+        'finanzas' => 'Finanzas',
+        'portales' => 'Portales',
+        'informes' => 'Informes',
+        'pipelines' => 'Pipelines',
+        'calendario' => 'Calendario',
+        'pagos' => 'Facturacion',
+        'presupuestos' => 'Presupuestos',
+        'contratos' => 'Contratos',
+        'marketing' => 'Marketing',
+        'formularios' => 'Formularios',
+        'encuestas' => 'Encuestas',
+        'funnels' => 'Funnels',
+        'landing' => 'Landing Pages',
+        'campanas' => 'Campanas Drip',
+        'ab-testing' => 'A/B Testing',
+        'ads' => 'Ads Report',
+        'social' => 'Redes Sociales',
+        'conversaciones' => 'Conversaciones',
+        'inbox' => 'Bandeja Unificada',
+        'email' => 'Email',
+        'whatsapp' => 'WhatsApp',
+        'sms' => 'SMS',
+        'chat' => 'Chat Web',
+        'blog' => 'Blog',
+        'cursos' => 'Cursos',
+        'comunidad' => 'Comunidad',
+        'medios' => 'Medios',
+        'automatizaciones' => 'Automatizaciones',
+        'ia' => 'IA Asistente',
+        'afiliados' => 'Afiliados',
+        'ajustes' => 'Ajustes',
+    ];
+}
+
+function getCurrentUserCustomRoleId() {
+    static $cached = null;
+    static $loaded = false;
+
+    if ($loaded) {
+        return $cached;
+    }
+
+    $loaded = true;
+    if (!isLoggedIn()) {
+        return null;
+    }
+
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT role_id FROM usuario_roles WHERE user_id = ? LIMIT 1");
+        $stmt->execute([intval(currentUserId())]);
+        $roleId = $stmt->fetchColumn();
+        $cached = $roleId ? intval($roleId) : null;
+    } catch (Exception $e) {
+        $cached = null;
+    }
+
+    return $cached;
+}
+
+function getAllowedModulesForCurrentUser() {
+    static $cached = null;
+    static $loaded = false;
+
+    if ($loaded) {
+        return $cached;
+    }
+
+    $loaded = true;
+    $cached = null;
+
+    if (!isLoggedIn() || isAdmin()) {
+        return null;
+    }
+
+    $roleId = getCurrentUserCustomRoleId();
+    if (!$roleId) {
+        // Sin rol personalizado: no limitar (comportamiento actual de agente).
+        return null;
+    }
+
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT modulo FROM role_modulos WHERE role_id = ? AND permitido = 1");
+        $stmt->execute([$roleId]);
+        $mods = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+        $allowed = [];
+        foreach ($mods as $m) {
+            $allowed[(string)$m] = true;
+        }
+        $cached = $allowed;
+    } catch (Exception $e) {
+        $cached = null;
+    }
+
+    return $cached;
+}
+
+function canAccessModule($moduleKey) {
+    $moduleKey = trim((string)$moduleKey);
+    if ($moduleKey === '') {
+        return true;
+    }
+
+    if (isAdmin()) {
+        return true;
+    }
+
+    $allowed = getAllowedModulesForCurrentUser();
+    if ($allowed === null) {
+        // Sin restricciones para agentes sin rol personalizado.
+        return true;
+    }
+
+    return !empty($allowed[$moduleKey]);
+}
+
+function enforceModuleAccessForRequest() {
+    if (!isLoggedIn() || isAdmin()) {
+        return;
+    }
+
+    $path = $_SERVER['PHP_SELF'] ?? '';
+    if (!preg_match('#/modules/([^/]+)/#', $path, $m)) {
+        return;
+    }
+
+    $moduleKey = trim($m[1] ?? '');
+    if ($moduleKey === '' || $moduleKey === 'usuarios') {
+        return;
+    }
+
+    if (!canAccessModule($moduleKey)) {
+        if (function_exists('setFlash')) {
+            setFlash('danger', 'Tu rol no tiene acceso a este modulo.');
+        }
+        header('Location: ' . APP_URL . '/index.php');
+        exit;
+    }
 }
 
 function isAdmin() {

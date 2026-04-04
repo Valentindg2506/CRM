@@ -84,7 +84,11 @@ $baseUrl = 'index.php?tipo=' . urlencode($filtroTipo) . '&q=' . urlencode($filtr
                 <td>
                     <div class="btn-group btn-group-sm">
                         <a href="<?= APP_URL ?>/assets/uploads/<?= sanitize($d['archivo']) ?>" class="btn btn-outline-primary" target="_blank"><i class="bi bi-download"></i></a>
-                        <a href="delete.php?id=<?= $d['id'] ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-danger" data-confirm="Eliminar este documento?"><i class="bi bi-trash"></i></a>
+                        <form method="POST" action="delete.php" class="d-inline" onsubmit="return confirm('Eliminar este documento?')">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="id" value="<?= intval($d['id']) ?>">
+                            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i></button>
+                        </form>
                     </div>
                 </td>
             </tr>

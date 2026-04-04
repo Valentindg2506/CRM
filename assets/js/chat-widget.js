@@ -3,7 +3,7 @@
     const CRM_URL = script.getAttribute('data-crm-url') || '';
     if (!CRM_URL) return;
 
-    let config = {}, visitorId = '', convId = 0, isOpen = false, hasData = false;
+    let config = {}, visitorId = '', convId = 0, chatToken = '', isOpen = false, hasData = false;
 
     function getCookie(n) { const m = document.cookie.match(new RegExp('(^| )'+n+'=([^;]+)')); return m ? m[2] : ''; }
     function setCookie(n,v) { document.cookie = n+'='+v+';path=/;max-age=31536000;SameSite=Lax'; }
@@ -101,7 +101,7 @@
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
             body: 'action=init&visitor_id='+encodeURIComponent(visitorId)+'&nombre='+encodeURIComponent(nombre)+'&email='+encodeURIComponent(email)+'&telefono='+encodeURIComponent(tel)+'&pagina='+encodeURIComponent(location.href)
         }).then(r=>r.json()).then(d => {
-            if (d.success) { convId = d.conversacion_id; initChat(); }
+            if (d.success) { convId = d.conversacion_id; chatToken = d.token || ''; initChat(); }
         });
     };
 
@@ -111,7 +111,13 @@
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
                 body: 'action=init&visitor_id='+encodeURIComponent(visitorId)+'&pagina='+encodeURIComponent(location.href)
-            }).then(r=>r.json()).then(d => { if (d.success) { convId = d.conversacion_id; loadMessages(); } });
+            }).then(r=>r.json()).then(d => {
+                if (d.success) {
+                    convId = d.conversacion_id;
+                    chatToken = d.token || '';
+                    loadMessages();
+                }
+            });
         } else {
             loadMessages();
         }
@@ -123,7 +129,8 @@
     }
 
     function loadMessages() {
-        fetch(CRM_URL + '/api/chat.php?action=messages&visitor_id=' + encodeURIComponent(visitorId))
+        if (!chatToken) return;
+        fetch(CRM_URL + '/api/chat.php?action=messages&visitor_id=' + encodeURIComponent(visitorId) + '&token=' + encodeURIComponent(chatToken))
         .then(r=>r.json()).then(d => {
             if (!d.success) return;
             const body = document.getElementById('crm-chat-body');
@@ -149,7 +156,7 @@
         fetch(CRM_URL + '/api/chat.php', {
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: 'action=send&visitor_id='+encodeURIComponent(visitorId)+'&mensaje='+encodeURIComponent(msg)
+            body: 'action=send&visitor_id='+encodeURIComponent(visitorId)+'&token='+encodeURIComponent(chatToken)+'&mensaje='+encodeURIComponent(msg)
         }).then(r=>r.json()).then(() => loadMessages());
     };
 

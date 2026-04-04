@@ -11,6 +11,27 @@ if (!$id) {
 
 $db = getDB();
 
+function pipelineHasProspectoColumn(PDO $db): bool {
+    try {
+        $stmt = $db->query("SHOW COLUMNS FROM pipeline_items LIKE 'prospecto_id'");
+        return (bool) $stmt->fetch();
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function pipelineEtapasHasConversionColumn(PDO $db): bool {
+    try {
+        $stmt = $db->query("SHOW COLUMNS FROM pipeline_etapas LIKE 'permitir_conversion'");
+        return (bool) $stmt->fetch();
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+$hasProspectoColumn = pipelineHasProspectoColumn($db);
+$hasConversionColumn = pipelineEtapasHasConversionColumn($db);
+
 // Obtener pipeline
 $stmt = $db->prepare("SELECT * FROM pipelines WHERE id = ?");
 $stmt->execute([$id]);
@@ -25,21 +46,41 @@ if (!$pipeline) {
 $pageTitle = sanitize($pipeline['nombre']);
 
 // Obtener etapas
-$stmtEtapas = $db->prepare("SELECT * FROM pipeline_etapas WHERE pipeline_id = ? ORDER BY orden ASC");
-$stmtEtapas->execute([$id]);
-$etapas = $stmtEtapas->fetchAll();
+if ($hasConversionColumn) {
+    $stmtEtapas = $db->prepare("SELECT * FROM pipeline_etapas WHERE pipeline_id = ? ORDER BY orden ASC");
+    $stmtEtapas->execute([$id]);
+    $etapas = $stmtEtapas->fetchAll();
+} else {
+    $stmtEtapas = $db->prepare("SELECT *, 0 AS permitir_conversion FROM pipeline_etapas WHERE pipeline_id = ? ORDER BY orden ASC");
+    $stmtEtapas->execute([$id]);
+    $etapas = $stmtEtapas->fetchAll();
+}
 
 // Obtener items con datos relacionados
-$stmtItems = $db->prepare("
+$itemsSql = "
     SELECT pi.*,
         c.nombre as cliente_nombre, c.apellidos as cliente_apellidos,
-        p.referencia as propiedad_ref, p.titulo as propiedad_titulo
+        p.referencia as propiedad_ref, p.titulo as propiedad_titulo";
+
+if ($hasProspectoColumn) {
+    $itemsSql .= ", pr.nombre as prospecto_nombre, pr.referencia as prospecto_referencia";
+}
+
+$itemsSql .= "
     FROM pipeline_items pi
     LEFT JOIN clientes c ON pi.cliente_id = c.id
-    LEFT JOIN propiedades p ON pi.propiedad_id = p.id
+    LEFT JOIN propiedades p ON pi.propiedad_id = p.id";
+
+if ($hasProspectoColumn) {
+    $itemsSql .= "\n    LEFT JOIN prospectos pr ON pi.prospecto_id = pr.id";
+}
+
+$itemsSql .= "
     WHERE pi.pipeline_id = ?
     ORDER BY pi.updated_at DESC
-");
+";
+
+$stmtItems = $db->prepare($itemsSql);
 $stmtItems->execute([$id]);
 $allItems = $stmtItems->fetchAll();
 
@@ -208,12 +249,19 @@ $prioridadColores = [
             </div>
             <div class="kanban-column-body" data-etapa-id="<?= $etapa['id'] ?>">
                 <?php foreach (($itemsPorEtapa[$etapa['id']] ?? []) as $item): ?>
+                <?php
+                    $etapaPermiteConversion = !empty($etapa['permitir_conversion']) || (!$hasConversionColumn && stripos((string)($etapa['nombre'] ?? ''), 'cerr') !== false);
+                    $canConvertProspecto = !empty($item['prospecto_id']) && empty($item['cliente_id']) && $etapaPermiteConversion;
+                ?>
                 <div class="kanban-card" draggable="true" data-item-id="<?= $item['id'] ?>">
                     <span class="priority-dot" style="background: <?= $prioridadColores[$item['prioridad']] ?>" title="Prioridad: <?= $item['prioridad'] ?>"></span>
                     <div class="kanban-card-title"><?= sanitize($item['titulo']) ?></div>
                     <div class="kanban-card-meta">
                         <?php if ($item['cliente_nombre']): ?>
                         <div><i class="bi bi-person"></i> <?= sanitize($item['cliente_nombre'] . ' ' . $item['cliente_apellidos']) ?></div>
+                        <?php endif; ?>
+                        <?php if (!empty($item['prospecto_nombre'])): ?>
+                        <div><i class="bi bi-person-badge"></i> <?= sanitize((!empty($item['prospecto_referencia']) ? $item['prospecto_referencia'] . ' - ' : '') . $item['prospecto_nombre']) ?></div>
                         <?php endif; ?>
                         <?php if ($item['propiedad_ref']): ?>
                         <div><i class="bi bi-house"></i> <?= sanitize($item['propiedad_ref']) ?></div>
@@ -225,7 +273,20 @@ $prioridadColores = [
                     <div class="kanban-card-time"><?= formatFechaHora($item['updated_at']) ?></div>
                     <div class="kanban-card-actions">
                         <a href="form_item.php?id=<?= $item['id'] ?>&pipeline_id=<?= $id ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-pencil"></i></a>
-                        <a href="delete_item.php?id=<?= $item['id'] ?>&pipeline_id=<?= $id ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-danger btn-sm" data-confirm="Eliminar este item?"><i class="bi bi-trash"></i></a>
+                        <?php if ($canConvertProspecto): ?>
+                        <form method="POST" action="convertir_prospecto.php" class="d-inline" onsubmit="return confirm('¿Convertir este prospecto a cliente y vincularlo al item?')">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="item_id" value="<?= intval($item['id']) ?>">
+                            <input type="hidden" name="pipeline_id" value="<?= intval($id) ?>">
+                            <button type="submit" class="btn btn-outline-success btn-sm" title="Convertir prospecto a cliente"><i class="bi bi-person-check"></i></button>
+                        </form>
+                        <?php endif; ?>
+                        <form method="POST" action="delete_item.php" class="d-inline" onsubmit="return confirm('Eliminar este item?')">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="id" value="<?= intval($item['id']) ?>">
+                            <input type="hidden" name="pipeline_id" value="<?= intval($id) ?>">
+                            <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i></button>
+                        </form>
                     </div>
                 </div>
                 <?php endforeach; ?>

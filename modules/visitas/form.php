@@ -12,6 +12,11 @@ if ($id) {
     $stmt->execute([$id]);
     $visita = $stmt->fetch();
     if (!$visita) { setFlash('danger', 'Visita no encontrada.'); header('Location: index.php'); exit; }
+    if (!isAdmin() && intval($visita['agente_id']) !== intval(currentUserId())) {
+        setFlash('danger', 'No tienes permisos para editar esta visita.');
+        header('Location: index.php');
+        exit;
+    }
     $pageTitle = 'Editar Visita';
 }
 
@@ -21,7 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $data = [
         'propiedad_id' => intval(post('propiedad_id')),
         'cliente_id' => intval(post('cliente_id')),
-        'agente_id' => intval(post('agente_id')) ?: currentUserId(),
+        'agente_id' => isAdmin()
+            ? (intval(post('agente_id')) ?: ($visita['agente_id'] ?? currentUserId()))
+            : ($visita['agente_id'] ?? currentUserId()),
         'fecha' => post('fecha'),
         'hora' => post('hora'),
         'duracion_minutos' => intval(post('duracion_minutos')) ?: 30,

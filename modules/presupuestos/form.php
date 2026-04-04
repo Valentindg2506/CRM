@@ -10,6 +10,11 @@ $id = intval(get('id'));
 $pres = null; $lineas = [];
 if ($id) {
     $pres = $db->prepare("SELECT * FROM presupuestos WHERE id=?"); $pres->execute([$id]); $pres=$pres->fetch();
+    if ($pres && !isAdmin() && intval($pres['usuario_id']) !== intval(currentUserId())) {
+        setFlash('danger', 'No tienes permisos para editar este presupuesto.');
+        header('Location: index.php');
+        exit;
+    }
     if ($pres) $lineas = json_decode($pres['lineas'], true) ?: [];
 }
 
@@ -42,8 +47,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($titulo)) { setFlash('danger', 'Titulo obligatorio.'); }
     else {
         if ($id) {
-            $db->prepare("UPDATE presupuestos SET cliente_id=?, propiedad_id=?, titulo=?, descripcion=?, lineas=?, subtotal=?, iva_total=?, total=?, validez_dias=?, fecha_emision=?, fecha_expiracion=?, notas=?, condiciones=? WHERE id=?")
-                ->execute([$clienteId, $propiedadId, $titulo, $descripcion, json_encode($lineasArr), $subtotal, $ivaTotal, $total, $validezDias, $fechaEmision, $fechaExp, $notas, $condiciones, $id]);
+            if (isAdmin()) {
+                $db->prepare("UPDATE presupuestos SET cliente_id=?, propiedad_id=?, titulo=?, descripcion=?, lineas=?, subtotal=?, iva_total=?, total=?, validez_dias=?, fecha_emision=?, fecha_expiracion=?, notas=?, condiciones=? WHERE id=?")
+                    ->execute([$clienteId, $propiedadId, $titulo, $descripcion, json_encode($lineasArr), $subtotal, $ivaTotal, $total, $validezDias, $fechaEmision, $fechaExp, $notas, $condiciones, $id]);
+            } else {
+                $db->prepare("UPDATE presupuestos SET cliente_id=?, propiedad_id=?, titulo=?, descripcion=?, lineas=?, subtotal=?, iva_total=?, total=?, validez_dias=?, fecha_emision=?, fecha_expiracion=?, notas=?, condiciones=? WHERE id=? AND usuario_id=?")
+                    ->execute([$clienteId, $propiedadId, $titulo, $descripcion, json_encode($lineasArr), $subtotal, $ivaTotal, $total, $validezDias, $fechaEmision, $fechaExp, $notas, $condiciones, $id, currentUserId()]);
+            }
         } else {
             $num = 'PRES-' . str_pad(intval($db->query("SELECT COUNT(*)+1 FROM presupuestos")->fetchColumn()), 5, '0', STR_PAD_LEFT);
             $token = bin2hex(random_bytes(32));
@@ -58,8 +68,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $pageTitle = $id ? 'Editar Presupuesto' : 'Nuevo Presupuesto';
 require_once __DIR__ . '/../../includes/header.php';
 
-$clientes = $db->query("SELECT id, nombre, apellidos FROM clientes WHERE activo=1 ORDER BY nombre")->fetchAll();
-$propiedades = $db->query("SELECT id, titulo, referencia FROM propiedades WHERE estado != 'retirado' ORDER BY titulo")->fetchAll();
+$stmtClientes = $db->prepare("SELECT id, nombre, apellidos FROM clientes WHERE activo=1" . (isAdmin() ? '' : ' AND agente_id = ?') . " ORDER BY nombre");
+$stmtClientes->execute(isAdmin() ? [] : [currentUserId()]);
+$clientes = $stmtClientes->fetchAll();
+
+$stmtPropiedades = $db->prepare("SELECT id, titulo, referencia FROM propiedades WHERE estado != 'retirado'" . (isAdmin() ? '' : ' AND agente_id = ?') . " ORDER BY titulo");
+$stmtPropiedades->execute(isAdmin() ? [] : [currentUserId()]);
+$propiedades = $stmtPropiedades->fetchAll();
 $config = $db->query("SELECT iva_defecto FROM configuracion_pagos LIMIT 1")->fetch();
 $ivaDefault = $config['iva_defecto'] ?? 21;
 ?>

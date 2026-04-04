@@ -12,6 +12,11 @@ if ($id) {
     $stmt->execute([$id]);
     $tarea = $stmt->fetch();
     if (!$tarea) { setFlash('danger', 'Tarea no encontrada.'); header('Location: index.php'); exit; }
+    if (!isAdmin() && intval($tarea['creado_por']) !== intval(currentUserId()) && intval($tarea['asignado_a']) !== intval(currentUserId())) {
+        setFlash('danger', 'No tienes permisos para editar esta tarea.');
+        header('Location: index.php');
+        exit;
+    }
     $pageTitle = 'Editar Tarea';
 }
 
@@ -25,7 +30,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'prioridad' => post('prioridad', 'media'),
         'estado' => post('estado', 'pendiente'),
         'fecha_vencimiento' => post('fecha_vencimiento') ? post('fecha_vencimiento') . ' ' . post('hora_vencimiento', '09:00') . ':00' : null,
-        'asignado_a' => post('asignado_a') ?: currentUserId(),
+        'asignado_a' => isAdmin()
+            ? (post('asignado_a') ?: ($tarea['asignado_a'] ?? currentUserId()))
+            : ($tarea['asignado_a'] ?? currentUserId()),
         'creado_por' => $id ? ($tarea['creado_por']) : currentUserId(),
         'propiedad_id' => post('propiedad_id') ?: null,
         'cliente_id' => post('cliente_id') ?: null,

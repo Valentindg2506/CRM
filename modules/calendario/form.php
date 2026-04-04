@@ -116,9 +116,11 @@ $valores = [
         <i class="bi bi-arrow-left"></i> Volver al Calendario
     </a>
     <?php if ($id): ?>
-    <a href="delete.php?id=<?= $id ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-danger btn-sm" data-confirm="Seguro que deseas eliminar este evento?">
-        <i class="bi bi-trash"></i> Eliminar
-    </a>
+    <form method="POST" action="delete.php" class="d-inline" onsubmit="return confirm('Seguro que deseas eliminar este evento?')">
+        <?= csrfField() ?>
+        <input type="hidden" name="id" value="<?= intval($id) ?>">
+        <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> Eliminar</button>
+    </form>
     <?php endif; ?>
 </div>
 

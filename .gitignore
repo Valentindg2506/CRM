@@ -1,5 +1,6 @@
 # Config with credentials
 config/database.php
+.env
 
 # Logs and backups
 logs/*.log

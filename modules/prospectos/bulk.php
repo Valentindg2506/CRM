@@ -23,6 +23,19 @@ if (empty($ids)) {
     exit;
 }
 
+if (!isAdmin()) {
+    $filterPlaceholders = implode(',', array_fill(0, count($ids), '?'));
+    $ownedStmt = $db->prepare("SELECT id FROM prospectos WHERE agente_id = ? AND id IN ($filterPlaceholders)");
+    $ownedStmt->execute(array_merge([currentUserId()], $ids));
+    $ids = array_map('intval', $ownedStmt->fetchAll(PDO::FETCH_COLUMN));
+
+    if (empty($ids)) {
+        setFlash('danger', 'No tienes permisos para operar sobre los prospectos seleccionados.');
+        header('Location: index.php');
+        exit;
+    }
+}
+
 $placeholders = implode(',', array_fill(0, count($ids), '?'));
 
 switch ($accion) {

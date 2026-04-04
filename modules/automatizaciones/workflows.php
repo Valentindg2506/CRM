@@ -10,6 +10,7 @@ $db = getDB();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
     $accion = post('accion');
+    $wfId = intval(post('wf_id'));
 
     if ($accion === 'guardar') {
         $id = intval(post('workflow_id'));
@@ -22,6 +23,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (empty($nombre)) { setFlash('danger', 'Nombre obligatorio.'); header('Location: workflows.php'); exit; }
 
         if ($id) {
+            if (!isAdmin()) {
+                $ownerStmt = $db->prepare("SELECT usuario_id FROM workflows WHERE id = ? LIMIT 1");
+                $ownerStmt->execute([$id]);
+                $ownerId = intval($ownerStmt->fetchColumn());
+                if ($ownerId !== intval(currentUserId())) {
+                    setFlash('danger', 'No tienes permisos sobre este workflow.');
+                    header('Location: workflows.php');
+                    exit;
+                }
+            }
             $db->prepare("UPDATE workflows SET nombre=?, descripcion=?, trigger_tipo=?, nodos=?, conexiones=?, updated_at=NOW() WHERE id=?")
                 ->execute([$nombre, $descripcion, $trigger_tipo, $nodos, $conexiones, $id]);
         } else {
@@ -35,12 +46,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($accion === 'toggle') {
-        $db->prepare("UPDATE workflows SET activo = NOT activo WHERE id = ?")->execute([intval(post('wf_id'))]);
+        if (!isAdmin()) {
+            $ownerStmt = $db->prepare("SELECT usuario_id FROM workflows WHERE id = ? LIMIT 1");
+            $ownerStmt->execute([$wfId]);
+            $ownerId = intval($ownerStmt->fetchColumn());
+            if ($ownerId !== intval(currentUserId())) {
+                setFlash('danger', 'No tienes permisos sobre este workflow.');
+                header('Location: workflows.php');
+                exit;
+            }
+        }
+        $db->prepare("UPDATE workflows SET activo = NOT activo WHERE id = ?")->execute([$wfId]);
         header('Location: workflows.php'); exit;
     }
 
     if ($accion === 'eliminar') {
-        $db->prepare("DELETE FROM workflows WHERE id = ?")->execute([intval(post('wf_id'))]);
+        if (!isAdmin()) {
+            $ownerStmt = $db->prepare("SELECT usuario_id FROM workflows WHERE id = ? LIMIT 1");
+            $ownerStmt->execute([$wfId]);
+            $ownerId = intval($ownerStmt->fetchColumn());
+            if ($ownerId !== intval(currentUserId())) {
+                setFlash('danger', 'No tienes permisos sobre este workflow.');
+                header('Location: workflows.php');
+                exit;
+            }
+        }
+        $db->prepare("DELETE FROM workflows WHERE id = ?")->execute([$wfId]);
         setFlash('success', 'Workflow eliminado.');
         header('Location: workflows.php'); exit;
     }
@@ -52,6 +83,12 @@ if ($editarId) {
     $stmt = $db->prepare("SELECT * FROM workflows WHERE id = ?");
     $stmt->execute([$editarId]);
     $workflow = $stmt->fetch();
+
+    if ($workflow && !isAdmin() && intval($workflow['usuario_id']) !== intval(currentUserId())) {
+        setFlash('danger', 'No tienes permisos para editar este workflow.');
+        header('Location: workflows.php');
+        exit;
+    }
 }
 
 $pageTitle = $workflow ? 'Editor de Workflow' : 'Workflows Visuales';

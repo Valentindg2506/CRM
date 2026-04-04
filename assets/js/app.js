@@ -1,8 +1,56 @@
 /**
- * InmoCRM Espana - JavaScript principal
+ * Tinoprop Espana - JavaScript principal
  */
 
 document.addEventListener('DOMContentLoaded', function() {
+    // ========= SIDEBAR SCROLL PERSISTENCE =========
+    const sidebarEl = document.getElementById('sidebar');
+    const sidebarNavEl = document.querySelector('.sidebar-nav');
+    const sidebarScrollKey = 'tinoprop.sidebar.scrollTop';
+
+    function getScrollableSidebarContainer() {
+        if (sidebarNavEl && sidebarNavEl.scrollHeight > sidebarNavEl.clientHeight) {
+            return sidebarNavEl;
+        }
+        return sidebarEl;
+    }
+
+    function restoreSidebarScroll() {
+        const target = getScrollableSidebarContainer();
+        if (!target) return;
+        try {
+            const stored = sessionStorage.getItem(sidebarScrollKey);
+            if (stored !== null) {
+                target.scrollTop = parseInt(stored, 10) || 0;
+            }
+        } catch (e) {
+            // Ignore storage errors.
+        }
+    }
+
+    function saveSidebarScroll() {
+        const target = getScrollableSidebarContainer();
+        if (!target) return;
+        try {
+            sessionStorage.setItem(sidebarScrollKey, String(target.scrollTop || 0));
+        } catch (e) {
+            // Ignore storage errors.
+        }
+    }
+
+    restoreSidebarScroll();
+
+    if (sidebarNavEl) {
+        sidebarNavEl.addEventListener('scroll', saveSidebarScroll, { passive: true });
+        sidebarNavEl.querySelectorAll('a.nav-link').forEach(function(link) {
+            link.addEventListener('click', saveSidebarScroll);
+        });
+    }
+    if (sidebarEl) {
+        sidebarEl.addEventListener('scroll', saveSidebarScroll, { passive: true });
+    }
+    window.addEventListener('beforeunload', saveSidebarScroll);
+
     // ========= DARK MODE TOGGLE =========
     const themeToggle = document.getElementById('themeToggle');
     const themeIcon = document.getElementById('themeIcon');
@@ -57,11 +105,34 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 5000);
     });
 
-    // ========= CONFIRM DELETE =========
+    // ========= CONFIRM DELETE (POST instead of GET) =========
     document.querySelectorAll('[data-confirm]').forEach(function(el) {
         el.addEventListener('click', function(e) {
+            e.preventDefault();
             if (!confirm(this.dataset.confirm || 'Estas seguro de que deseas eliminar este elemento?')) {
-                e.preventDefault();
+                return;
+            }
+            // Extract params from the link href and submit as POST
+            var href = this.getAttribute('href');
+            if (href && href.includes('delete.php')) {
+                var url = href.split('?')[0];
+                var params = new URLSearchParams(href.split('?')[1] || '');
+                var form = document.createElement('form');
+                form.method = 'POST';
+                form.action = url;
+                form.style.display = 'none';
+                params.forEach(function(value, key) {
+                    var input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = key;
+                    input.value = value;
+                    form.appendChild(input);
+                });
+                document.body.appendChild(form);
+                form.submit();
+            } else {
+                // Non-delete confirmations: follow the link
+                window.location.href = href;
             }
         });
     });

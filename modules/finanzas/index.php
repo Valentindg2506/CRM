@@ -141,7 +141,11 @@ $baseUrl = 'index.php?tipo=' . urlencode($filtroTipo) . '&estado=' . urlencode($
                 <td>
                     <div class="btn-group btn-group-sm">
                         <a href="form.php?id=<?= $r['id'] ?>" class="btn btn-outline-secondary"><i class="bi bi-pencil"></i></a>
-                        <a href="delete.php?id=<?= $r['id'] ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-danger" data-confirm="Eliminar este registro?"><i class="bi bi-trash"></i></a>
+                        <form method="POST" action="delete.php" class="d-inline" onsubmit="return confirm('Eliminar este registro?')">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="id" value="<?= intval($r['id']) ?>">
+                            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i></button>
+                        </form>
                     </div>
                 </td>
             </tr>

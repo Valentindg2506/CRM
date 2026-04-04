@@ -11,6 +11,11 @@ $stmt = $db->prepare("SELECT * FROM clientes WHERE id = ?");
 $stmt->execute([$id]);
 $cliente = $stmt->fetch();
 if (!$cliente) { setFlash('danger', 'Cliente no encontrado.'); header('Location: index.php'); exit; }
+if (!isAdmin() && intval($cliente['agente_id']) !== intval(currentUserId())) {
+    setFlash('danger', 'No tienes permisos para gestionar RGPD de este cliente.');
+    header('Location: index.php');
+    exit;
+}
 
 // Acciones RGPD
 if ($accion === 'exportar') {

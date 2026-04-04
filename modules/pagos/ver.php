@@ -11,6 +11,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
     $fid = intval(post('factura_id'));
     $estado = post('nuevo_estado');
+
+    if (!isAdmin()) {
+        $ownerStmt = $db->prepare("SELECT usuario_id FROM facturas WHERE id = ? LIMIT 1");
+        $ownerStmt->execute([$fid]);
+        $ownerId = intval($ownerStmt->fetchColumn());
+        if ($ownerId !== intval(currentUserId())) {
+            setFlash('danger', 'No tienes permisos sobre esta factura.');
+            header('Location: index.php');
+            exit;
+        }
+    }
+
     $validos = ['borrador','enviada','pagada','vencida','cancelada'];
     if (in_array($estado, $validos)) {
         $db->prepare("UPDATE facturas SET estado = ? WHERE id = ?")->execute([$estado, $fid]);
@@ -25,6 +37,7 @@ $stmt = $db->prepare("SELECT f.*, c.nombre as cli_nombre, c.apellidos as cli_ape
 $stmt->execute([$id]);
 $f = $stmt->fetch();
 if (!$f) { setFlash('danger', 'Factura no encontrada.'); header('Location: index.php'); exit; }
+if (!isAdmin() && intval($f['usuario_id']) !== intval(currentUserId())) { setFlash('danger', 'No tienes permisos para ver esta factura.'); header('Location: index.php'); exit; }
 
 $config = $db->query("SELECT * FROM configuracion_pagos LIMIT 1")->fetch();
 $lineas = json_decode($f['lineas'], true) ?: [];
@@ -66,7 +79,7 @@ require_once __DIR__ . '/../../includes/header.php';
     <div class="card-body p-4 p-md-5">
         <div class="row mb-4">
             <div class="col-6">
-                <h4 class="fw-bold mb-1"><?= sanitize($config['empresa_nombre'] ?: 'InmoCRM') ?></h4>
+                <h4 class="fw-bold mb-1"><?= sanitize($config['empresa_nombre'] ?: 'Tinoprop') ?></h4>
                 <?php if ($config['empresa_cif']): ?><p class="mb-0 small"><?= sanitize($config['empresa_cif']) ?></p><?php endif; ?>
                 <?php if ($config['empresa_direccion']): ?><p class="mb-0 small text-muted"><?= nl2br(sanitize($config['empresa_direccion'])) ?></p><?php endif; ?>
                 <?php if ($config['empresa_email']): ?><p class="mb-0 small"><?= sanitize($config['empresa_email']) ?></p><?php endif; ?>

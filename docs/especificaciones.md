@@ -1,8 +1,8 @@
-# Especificaciones del Sistema - InmoCRM
+# Especificaciones del Sistema - Tinoprop
 
 ## 1. Descripción General
 
-**InmoCRM** es un sistema de gestión de relaciones con clientes (CRM) especializado para el sector inmobiliario en España. Desarrollado como aplicación web PHP pura, está diseñado para funcionar en hosting compartido sin dependencias de frameworks externos.
+**Tinoprop** es un sistema de gestión de relaciones con clientes (CRM) especializado para el sector inmobiliario en España. Desarrollado como aplicación web PHP pura, está diseñado para funcionar en hosting compartido sin dependencias de frameworks externos.
 
 ## 2. Requisitos Funcionales
 

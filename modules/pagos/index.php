@@ -10,8 +10,20 @@ $db = getDB();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
     $accion = post('accion');
+    $fid = intval(post('factura_id'));
+
+    if (($accion === 'cambiar_estado' || $accion === 'eliminar') && $fid > 0 && !isAdmin()) {
+        $ownerStmt = $db->prepare("SELECT usuario_id FROM facturas WHERE id = ? LIMIT 1");
+        $ownerStmt->execute([$fid]);
+        $ownerId = intval($ownerStmt->fetchColumn());
+        if ($ownerId !== intval(currentUserId())) {
+            setFlash('danger', 'No tienes permisos sobre esta factura.');
+            header('Location: index.php');
+            exit;
+        }
+    }
+
     if ($accion === 'cambiar_estado') {
-        $fid = intval(post('factura_id'));
         $estado = post('nuevo_estado');
         $validos = ['borrador','enviada','pagada','vencida','cancelada'];
         if (in_array($estado, $validos)) {
@@ -20,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     if ($accion === 'eliminar') {
-        $db->prepare("DELETE FROM facturas WHERE id = ?")->execute([intval(post('factura_id'))]);
+        $db->prepare("DELETE FROM facturas WHERE id = ?")->execute([$fid]);
         setFlash('success', 'Factura eliminada.');
     }
     header('Location: index.php');
@@ -36,6 +48,7 @@ $page = max(1, intval(get('page', 1)));
 
 $where = '1=1';
 $params = [];
+if (!isAdmin()) { $where .= ' AND f.usuario_id = ?'; $params[] = currentUserId(); }
 if ($filtroEstado) { $where .= ' AND f.estado = ?'; $params[] = $filtroEstado; }
 if ($busqueda) { $where .= ' AND (f.numero LIKE ? OR f.concepto LIKE ? OR c.nombre LIKE ?)'; $b = "%$busqueda%"; $params = array_merge($params, [$b,$b,$b]); }
 
@@ -48,7 +61,10 @@ $stmt->execute($params);
 $facturas = $stmt->fetchAll();
 
 // Stats
-$stats = $db->query("SELECT COALESCE(SUM(total),0) as total_facturado, COALESCE(SUM(CASE WHEN estado='pagada' THEN total ELSE 0 END),0) as cobrado, COALESCE(SUM(CASE WHEN estado IN('enviada','borrador') THEN total ELSE 0 END),0) as pendiente, COALESCE(SUM(CASE WHEN estado='vencida' THEN total ELSE 0 END),0) as vencido FROM facturas")->fetch();
+$statsSql = "SELECT COALESCE(SUM(total),0) as total_facturado, COALESCE(SUM(CASE WHEN estado='pagada' THEN total ELSE 0 END),0) as cobrado, COALESCE(SUM(CASE WHEN estado IN('enviada','borrador') THEN total ELSE 0 END),0) as pendiente, COALESCE(SUM(CASE WHEN estado='vencida' THEN total ELSE 0 END),0) as vencido FROM facturas" . (isAdmin() ? '' : ' WHERE usuario_id = ?');
+$statsStmt = $db->prepare($statsSql);
+$statsStmt->execute(isAdmin() ? [] : [currentUserId()]);
+$stats = $statsStmt->fetch();
 
 $estadoClases = ['borrador'=>'secondary','enviada'=>'primary','pagada'=>'success','vencida'=>'danger','cancelada'=>'dark'];
 ?>

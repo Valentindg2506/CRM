@@ -6,6 +6,19 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 requireLogin();
 $db = getDB();
 
+/**
+ * Ejecuta consultas de timeline sin romper la vista si falta una tabla/columna.
+ */
+function timelineFetchAll(PDO $db, $sql, array $params = []) {
+    try {
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
 $id = intval(get('id'));
 if (!$id) {
     setFlash('danger', 'ID de cliente no especificado.');
@@ -29,9 +42,12 @@ require_once __DIR__ . '/../../includes/header.php';
 $timeline = [];
 
 // 1. Actividad log
-$stmt = $db->prepare("SELECT accion AS titulo, descripcion, created_at AS fecha FROM actividad_log WHERE entidad = 'cliente' AND entidad_id = ? ORDER BY created_at DESC");
-$stmt->execute([$id]);
-foreach ($stmt->fetchAll() as $row) {
+$actividadRows = timelineFetchAll(
+    $db,
+    "SELECT accion AS titulo, COALESCE(detalles, '') AS descripcion, created_at AS fecha FROM actividad_log WHERE entidad = 'cliente' AND entidad_id = ? ORDER BY created_at DESC",
+    [$id]
+);
+foreach ($actividadRows as $row) {
     $timeline[] = [
         'tipo'        => 'actividad',
         'titulo'      => $row['titulo'],
@@ -43,9 +59,12 @@ foreach ($stmt->fetchAll() as $row) {
 }
 
 // 2. Visitas
-$stmt = $db->prepare("SELECT v.fecha, v.hora, v.estado, v.comentarios, p.referencia, p.titulo AS propiedad FROM visitas v LEFT JOIN propiedades p ON v.propiedad_id = p.id WHERE v.cliente_id = ? ORDER BY v.fecha DESC");
-$stmt->execute([$id]);
-foreach ($stmt->fetchAll() as $row) {
+$visitasRows = timelineFetchAll(
+    $db,
+    "SELECT v.fecha, v.hora, v.estado, v.comentarios, p.referencia, p.titulo AS propiedad FROM visitas v LEFT JOIN propiedades p ON v.propiedad_id = p.id WHERE v.cliente_id = ? ORDER BY v.fecha DESC",
+    [$id]
+);
+foreach ($visitasRows as $row) {
     $titulo = 'Visita: ' . ($row['referencia'] ? $row['referencia'] . ' - ' : '') . ($row['propiedad'] ?? 'Propiedad');
     $desc = 'Estado: ' . ucfirst(str_replace('_', ' ', $row['estado']));
     if ($row['hora']) $desc .= ' | Hora: ' . substr($row['hora'], 0, 5);
@@ -61,9 +80,12 @@ foreach ($stmt->fetchAll() as $row) {
 }
 
 // 3. Tareas
-$stmt = $db->prepare("SELECT titulo, descripcion, fecha_vencimiento AS fecha, estado, prioridad FROM tareas WHERE cliente_id = ? ORDER BY fecha_vencimiento DESC");
-$stmt->execute([$id]);
-foreach ($stmt->fetchAll() as $row) {
+$tareasRows = timelineFetchAll(
+    $db,
+    "SELECT titulo, descripcion, fecha_vencimiento AS fecha, estado, prioridad FROM tareas WHERE cliente_id = ? ORDER BY fecha_vencimiento DESC",
+    [$id]
+);
+foreach ($tareasRows as $row) {
     $desc = 'Estado: ' . ucfirst($row['estado']) . ' | Prioridad: ' . ucfirst($row['prioridad']);
     if ($row['descripcion']) $desc .= ' | ' . $row['descripcion'];
     $timeline[] = [
@@ -77,9 +99,12 @@ foreach ($stmt->fetchAll() as $row) {
 }
 
 // 4. Emails
-$stmt = $db->prepare("SELECT em.asunto, em.mensaje, em.fecha, ec.email AS cuenta_email FROM email_mensajes em LEFT JOIN email_cuentas ec ON em.cuenta_id = ec.id WHERE em.cliente_id = ? ORDER BY em.fecha DESC");
-$stmt->execute([$id]);
-foreach ($stmt->fetchAll() as $row) {
+$emailsRows = timelineFetchAll(
+    $db,
+    "SELECT em.asunto, COALESCE(NULLIF(em.cuerpo, ''), em.cuerpo_html, '') AS mensaje, em.created_at AS fecha, ec.email AS cuenta_email FROM email_mensajes em LEFT JOIN email_cuentas ec ON em.cuenta_id = ec.id WHERE em.cliente_id = ? ORDER BY em.created_at DESC",
+    [$id]
+);
+foreach ($emailsRows as $row) {
     $desc = $row['cuenta_email'] ? 'Cuenta: ' . $row['cuenta_email'] : '';
     if ($row['mensaje']) {
         $desc .= ($desc ? ' | ' : '') . mb_substr(strip_tags($row['mensaje']), 0, 120);
@@ -94,10 +119,13 @@ foreach ($stmt->fetchAll() as $row) {
     ];
 }
 
-// 5. Notas
-$stmt = $db->prepare("SELECT titulo, contenido, created_at AS fecha FROM notas WHERE entidad = 'cliente' AND entidad_id = ? ORDER BY created_at DESC");
-$stmt->execute([$id]);
-foreach ($stmt->fetchAll() as $row) {
+// 5. Notas (opcional: puede no existir en instalaciones antiguas)
+$notasRows = timelineFetchAll(
+    $db,
+    "SELECT titulo, contenido, created_at AS fecha FROM notas WHERE entidad = 'cliente' AND entidad_id = ? ORDER BY created_at DESC",
+    [$id]
+);
+foreach ($notasRows as $row) {
     $timeline[] = [
         'tipo'        => 'nota',
         'titulo'      => 'Nota: ' . ($row['titulo'] ?? 'Sin titulo'),

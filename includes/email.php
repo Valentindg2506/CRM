@@ -32,7 +32,7 @@ function enviarEmailMail($destinatario, $asunto, $cuerpo, $esHTML = true) {
     $headers[] = $esHTML ? 'Content-type: text/html; charset=UTF-8' : 'Content-type: text/plain; charset=UTF-8';
     $headers[] = 'From: ' . SMTP_FROM_NAME . ' <' . SMTP_FROM . '>';
     $headers[] = 'Reply-To: ' . SMTP_FROM;
-    $headers[] = 'X-Mailer: InmoCRM';
+    $headers[] = 'X-Mailer: Tinoprop';
 
     if ($esHTML) {
         $cuerpo = plantillaEmail($cuerpo);

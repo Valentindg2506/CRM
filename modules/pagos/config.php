@@ -7,6 +7,12 @@ requireLogin();
 
 $db = getDB();
 
+if (!isAdmin()) {
+    setFlash('danger', 'Solo administradores pueden acceder a la configuracion de pagos.');
+    header('Location: index.php');
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
     $campos = ['empresa_nombre','empresa_cif','empresa_direccion','empresa_email','empresa_telefono','empresa_logo_url','moneda','prefijo_factura'];
@@ -42,6 +48,7 @@ $config = $db->query("SELECT * FROM configuracion_pagos WHERE id = 1")->fetch();
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <a href="index.php" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
+    <a href="webhook_status.php" class="btn btn-outline-primary btn-sm"><i class="bi bi-shield-check"></i> Estado webhook</a>
 </div>
 
 <form method="POST">

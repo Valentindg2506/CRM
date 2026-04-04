@@ -8,6 +8,7 @@ ob_start();
 
 // Contar notificaciones no leidas
 $db = getDB();
+generarNotificacionesProspectosVencidos(currentUserId());
 $stmtNotif = $db->prepare("SELECT COUNT(*) FROM notificaciones WHERE usuario_id = ? AND leida = 0");
 $stmtNotif->execute([currentUserId()]);
 $notifCount = $stmtNotif->fetchColumn();
@@ -16,7 +17,9 @@ $notifCount = $stmtNotif->fetchColumn();
 $_wl = null;
 try {
     $_wl = $db->query("SELECT * FROM whitelabel_config WHERE id=1")->fetch();
-} catch (Exception $e) {}
+} catch (Exception $e) {
+    error_log($e->getMessage());
+}
 
 $_appName = $_wl['app_nombre'] ?? APP_NAME;
 $_colorPrimary = $_wl['color_primario'] ?? '#10b981';
@@ -56,13 +59,14 @@ $_primaryLightRgba = "rgba(" . hexdec(substr($_colorPrimary,1,2)) . "," . hexdec
 $currentPage = basename($_SERVER['PHP_SELF'], '.php');
 $currentPath = $_SERVER['PHP_SELF'];
 $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/index.php' || !preg_match('/modules\//', $currentPath));
+$allowedModulesForMenu = getAllowedModulesForCurrentUser();
 ?>
 <!DOCTYPE html>
 <html lang="es" data-bs-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= $pageTitle ?? 'InmoCRM' ?> - <?= htmlspecialchars($_appName) ?></title>
+    <title><?= $pageTitle ?? APP_NAME ?> - <?= htmlspecialchars($_appName) ?></title>
     <?php if ($_faviconUrl): ?><link rel="icon" href="<?= htmlspecialchars($_faviconUrl) ?>"><?php endif; ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -86,7 +90,21 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
         .form-control:focus, .form-select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px <?= $_primaryLightRgba ?>; }
         a { color: var(--primary); }
         a:hover { color: var(--primary); filter: brightness(0.85); }
-        <?= $_customCss ?>
+        .notif-menu { width: 360px; max-width: 92vw; padding: 0; }
+        .notif-header { display: flex; justify-content: space-between; align-items: center; padding: .65rem .85rem; border-bottom: 1px solid rgba(0,0,0,.06); }
+        .notif-list { max-height: 360px; overflow-y: auto; }
+        .notif-item { display: block; padding: .65rem .85rem; border-bottom: 1px solid rgba(0,0,0,.04); text-decoration: none; color: inherit; }
+        .notif-item:last-child { border-bottom: 0; }
+        .notif-item.unread { background: rgba(16,185,129,.08); }
+        .notif-title { font-size: .875rem; line-height: 1.35; }
+        .notif-time { font-size: .73rem; color: #6c757d; }
+        .notif-type-chip { font-size: .68rem; padding: 2px 7px; border-radius: 999px; margin-left: 6px; }
+        .notif-empty { padding: 1rem; text-align: center; color: #6c757d; }
+        .notif-badge-dot { display:inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; margin-right: 6px; vertical-align: middle; }
+        [data-bs-theme="dark"] .notif-header { border-bottom-color: rgba(255,255,255,.08); }
+        [data-bs-theme="dark"] .notif-item { border-bottom-color: rgba(255,255,255,.06); }
+        [data-bs-theme="dark"] .notif-item.unread { background: rgba(16,185,129,.15); }
+        <?= strip_tags(str_replace(['</style', '<script', '<link', '@import'], '', $_customCss)) ?>
     </style>
     <script>
         // Dark mode: apply before render to prevent flash
@@ -95,6 +113,28 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
             if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
                 document.documentElement.setAttribute('data-bs-theme', 'dark');
             }
+        })();
+
+        // Hide sidebar links for custom roles with module restrictions.
+        (function () {
+            const allowed = <?= json_encode($allowedModulesForMenu, JSON_UNESCAPED_UNICODE) ?>;
+            if (!allowed || typeof allowed !== 'object') {
+                return;
+            }
+
+            document.addEventListener('DOMContentLoaded', function () {
+                const nav = document.querySelector('.sidebar-nav');
+                if (!nav) return;
+                nav.querySelectorAll('a.nav-link').forEach(function (a) {
+                    const href = a.getAttribute('href') || '';
+                    const m = href.match(/\/modules\/([^/]+)\//);
+                    if (!m) return;
+                    const moduleKey = m[1];
+                    if (!allowed[moduleKey]) {
+                        a.style.display = 'none';
+                    }
+                });
+            });
         })();
     </script>
 </head>
@@ -107,7 +147,7 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
             <?php else: ?>
                 <h4><i class="bi bi-buildings"></i> <?= htmlspecialchars($_appName) ?></h4>
             <?php endif; ?>
-            <small class="text-muted">CRM Inmobiliario</small>
+            <small class="sidebar-brand-subtitle">Software Empresarial</small>
         </div>
         <nav class="sidebar-nav">
             <a href="<?= APP_URL ?>/index.php" class="nav-link <?= $isDashboard && $currentPage === 'index' ? 'active' : '' ?>">
@@ -156,7 +196,10 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
                 <i class="bi bi-pen"></i> Contratos
             </a>
             <hr class="mx-3 my-2">
-            <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Marketing</small>
+            <small class="sidebar-section-title">Marketing</small>
+            <a href="<?= APP_URL ?>/modules/marketing/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/marketing/') !== false ? 'active' : '' ?>">
+                <i class="bi bi-megaphone"></i> Marketing
+            </a>
             <a href="<?= APP_URL ?>/modules/formularios/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'formularios') !== false ? 'active' : '' ?>">
                 <i class="bi bi-ui-checks-grid"></i> Formularios
             </a>
@@ -172,9 +215,7 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
             <a href="<?= APP_URL ?>/modules/campanas/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'campanas') !== false ? 'active' : '' ?>">
                 <i class="bi bi-send"></i> Campanas Drip
             </a>
-            <a href="<?= APP_URL ?>/modules/marketing/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/marketing/') !== false ? 'active' : '' ?>">
-                <i class="bi bi-megaphone"></i> Marketing
-            </a>
+
             <a href="<?= APP_URL ?>/modules/ab-testing/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'ab-testing') !== false ? 'active' : '' ?>">
                 <i class="bi bi-arrow-left-right"></i> A/B Testing
             </a>
@@ -185,7 +226,7 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
                 <i class="bi bi-share"></i> Redes Sociales
             </a>
             <hr class="mx-3 my-2">
-            <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Comunicacion</small>
+            <small class="sidebar-section-title">Comunicacion</small>
             <a href="<?= APP_URL ?>/modules/conversaciones/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'conversaciones') !== false ? 'active' : '' ?>">
                 <i class="bi bi-chat-left-text"></i> Conversaciones
             </a>
@@ -205,7 +246,7 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
                 <i class="bi bi-chat-dots"></i> Chat Web
             </a>
             <hr class="mx-3 my-2">
-            <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Contenido</small>
+            <small class="sidebar-section-title">Contenido</small>
             <a href="<?= APP_URL ?>/modules/blog/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/blog/') !== false ? 'active' : '' ?>">
                 <i class="bi bi-journal-richtext"></i> Blog
             </a>
@@ -219,7 +260,7 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
                 <i class="bi bi-images"></i> Medios
             </a>
             <hr class="mx-3 my-2">
-            <small class="text-muted px-3 text-uppercase" style="font-size: 0.65rem; letter-spacing: 1px;">Sistema</small>
+            <small class="sidebar-section-title">Sistema</small>
             <a href="<?= APP_URL ?>/modules/automatizaciones/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'automatizaciones') !== false ? 'active' : '' ?>">
                 <i class="bi bi-robot"></i> Automatizaciones
             </a>
@@ -235,6 +276,9 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
             <?php if (isAdmin()): ?>
             <a href="<?= APP_URL ?>/modules/usuarios/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'usuarios') !== false && strpos($_SERVER['PHP_SELF'], 'backup') === false ? 'active' : '' ?>">
                 <i class="bi bi-people-fill"></i> Usuarios
+            </a>
+            <a href="<?= APP_URL ?>/modules/usuarios/roles.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'usuarios/roles') !== false ? 'active' : '' ?>">
+                <i class="bi bi-shield-lock"></i> Roles
             </a>
             <a href="<?= APP_URL ?>/modules/usuarios/backup.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'backup') !== false ? 'active' : '' ?>">
                 <i class="bi bi-database-down"></i> Backups
@@ -268,22 +312,66 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
                         </span>
                         <?php endif; ?>
                     </button>
-                    <div class="dropdown-menu dropdown-menu-end" style="width: 300px;">
-                        <h6 class="dropdown-header">Notificaciones</h6>
+                    <div class="dropdown-menu dropdown-menu-end notif-menu">
+                        <div class="notif-header">
+                            <h6 class="mb-0">Notificaciones</h6>
+                            <?php if ($notifCount > 0): ?>
+                                <button type="button" class="btn btn-sm btn-link text-decoration-none p-0" id="markAllNotifBtn">Marcar todas</button>
+                            <?php endif; ?>
+                        </div>
                         <?php
-                        $stmtN = $db->prepare("SELECT * FROM notificaciones WHERE usuario_id = ? ORDER BY created_at DESC LIMIT 5");
+                        $stmtN = $db->prepare("SELECT * FROM notificaciones WHERE usuario_id = ? ORDER BY created_at DESC LIMIT 8");
                         $stmtN->execute([currentUserId()]);
                         $notifs = $stmtN->fetchAll();
                         if (empty($notifs)):
                         ?>
-                        <p class="text-muted text-center py-3 mb-0">Sin notificaciones</p>
+                        <div class="notif-empty">Sin notificaciones</div>
                         <?php else:
-                            foreach ($notifs as $notif): ?>
-                        <a class="dropdown-item <?= $notif['leida'] ? '' : 'fw-bold' ?>" href="<?= $notif['enlace'] ?? '#' ?>">
-                            <small class="text-muted"><?= formatFechaHora($notif['created_at']) ?></small><br>
-                            <?= sanitize($notif['titulo']) ?>
+                        ?>
+                        <div class="notif-list">
+                        <?php foreach ($notifs as $notif): ?>
+                        <?php
+                            $notifTitleLc = mb_strtolower((string)($notif['titulo'] ?? ''), 'UTF-8');
+                            $notifLinkLc = mb_strtolower((string)($notif['enlace'] ?? ''), 'UTF-8');
+                            $notifTypeLabel = 'General';
+                            $notifTypeIcon = 'bi-bell';
+                            $notifTypeClass = 'bg-secondary-subtle text-secondary-emphasis';
+
+                            if (strpos($notifLinkLc, 'contrato') !== false || strpos($notifTitleLc, 'contrato') !== false) {
+                                $notifTypeLabel = 'Contrato';
+                                $notifTypeIcon = 'bi-file-earmark-text';
+                                $notifTypeClass = 'bg-primary-subtle text-primary-emphasis';
+                            } elseif (strpos($notifLinkLc, 'tareas') !== false || strpos($notifTitleLc, 'tarea') !== false) {
+                                $notifTypeLabel = 'Tarea';
+                                $notifTypeIcon = 'bi-check2-square';
+                                $notifTypeClass = 'bg-warning-subtle text-warning-emphasis';
+                            } elseif (strpos($notifLinkLc, 'visitas') !== false || strpos($notifTitleLc, 'visita') !== false) {
+                                $notifTypeLabel = 'Visita';
+                                $notifTypeIcon = 'bi-calendar-event';
+                                $notifTypeClass = 'bg-info-subtle text-info-emphasis';
+                            } elseif (strpos($notifLinkLc, 'prospect') !== false || strpos($notifTitleLc, 'prospect') !== false || strpos($notifTitleLc, 'lead') !== false) {
+                                $notifTypeLabel = 'Lead';
+                                $notifTypeIcon = 'bi-person-plus';
+                                $notifTypeClass = 'bg-success-subtle text-success-emphasis';
+                            } elseif (strpos($notifLinkLc, 'finanzas') !== false || strpos($notifLinkLc, 'pagos') !== false || strpos($notifTitleLc, 'pago') !== false) {
+                                $notifTypeLabel = 'Finanzas';
+                                $notifTypeIcon = 'bi-cash-stack';
+                                $notifTypeClass = 'bg-danger-subtle text-danger-emphasis';
+                            }
+                        ?>
+                        <a class="notif-item <?= intval($notif['leida']) === 0 ? 'unread' : '' ?>" href="<?= $notif['enlace'] ?? '#' ?>" data-notif-id="<?= intval($notif['id']) ?>">
+                            <div class="notif-time"><?= formatFechaHora($notif['created_at']) ?></div>
+                            <div class="notif-title">
+                                <?php if (intval($notif['leida']) === 0): ?><span class="notif-badge-dot"></span><?php endif; ?>
+                                <i class="bi <?= $notifTypeIcon ?> me-1"></i><?= sanitize($notif['titulo']) ?>
+                                <span class="notif-type-chip <?= $notifTypeClass ?>"><?= sanitize($notifTypeLabel) ?></span>
+                            </div>
                         </a>
                         <?php endforeach; endif; ?>
+                        <?php if (!empty($notifs)): ?></div><?php endif; ?>
+                        <div class="notif-header border-top-0">
+                            <a href="<?= APP_URL ?>/notificaciones.php" class="btn btn-sm btn-outline-secondary w-100">Ver todas las notificaciones</a>
+                        </div>
                     </div>
                 </div>
                 <!-- Usuario -->
@@ -310,3 +398,65 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
             <?php endif; ?>
+
+            <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                const notifApiUrl = '<?= APP_URL ?>/api/notificaciones.php';
+                const csrf = '<?= csrfToken() ?>';
+                const bellBadge = document.querySelector('.btn[data-bs-toggle="dropdown"] .badge');
+
+                function reduceBellCount() {
+                    if (!bellBadge) return;
+                    const current = parseInt(bellBadge.textContent || '0', 10);
+                    if (isNaN(current)) return;
+                    const next = Math.max(0, current - 1);
+                    if (next <= 0) {
+                        bellBadge.remove();
+                    } else {
+                        bellBadge.textContent = String(next);
+                    }
+                }
+
+                document.querySelectorAll('.notif-item[data-notif-id]').forEach(function (el) {
+                    el.addEventListener('click', function () {
+                        const notifId = this.getAttribute('data-notif-id');
+                        const wasUnread = this.classList.contains('unread');
+                        const data = new FormData();
+                        data.append('accion', 'mark_one');
+                        data.append('id', notifId);
+                        data.append('csrf_token', csrf);
+                        navigator.sendBeacon ? navigator.sendBeacon(notifApiUrl, data) : fetch(notifApiUrl, { method: 'POST', body: data, keepalive: true });
+
+                        if (wasUnread) {
+                            this.classList.remove('unread');
+                            const dot = this.querySelector('.notif-badge-dot');
+                            if (dot) dot.remove();
+                            reduceBellCount();
+                        }
+                    });
+                });
+
+                const markAllBtn = document.getElementById('markAllNotifBtn');
+                if (markAllBtn) {
+                    markAllBtn.addEventListener('click', function () {
+                        const data = new FormData();
+                        data.append('accion', 'mark_all');
+                        data.append('csrf_token', csrf);
+                        fetch(notifApiUrl, { method: 'POST', body: data })
+                            .then(function (r) { return r.json(); })
+                            .then(function (res) {
+                                if (res && res.success) {
+                                    document.querySelectorAll('.notif-item.unread').forEach(function (it) {
+                                        it.classList.remove('unread');
+                                        const dot = it.querySelector('.notif-badge-dot');
+                                        if (dot) dot.remove();
+                                    });
+                                    if (bellBadge) bellBadge.remove();
+                                    markAllBtn.remove();
+                                }
+                            })
+                            .catch(function () {});
+                    });
+                }
+            });
+            </script>

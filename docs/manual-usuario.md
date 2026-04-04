@@ -1,4 +1,4 @@
-# Manual de Usuario - InmoCRM España
+# Manual de Usuario - Tinoprop
 
 **Version:** 1.2.0
 **Ultima actualizacion:** Marzo 2026
@@ -32,7 +32,7 @@
 
 ## Introduccion
 
-InmoCRM España es un sistema de gestion de relaciones con clientes (CRM) diseñado especificamente para el sector inmobiliario español. Permite gestionar propiedades, clientes, visitas, contratos, facturacion y mucho mas desde una interfaz web moderna y responsive.
+Tinoprop es un sistema de gestion de relaciones con clientes (CRM) diseñado especificamente para el sector inmobiliario español. Permite gestionar propiedades, clientes, visitas, contratos, facturacion y mucho mas desde una interfaz web moderna y responsive.
 
 El sistema esta optimizado para agencias inmobiliarias de cualquier tamaño y cumple con la normativa RGPD/LOPD vigente en España.
 
@@ -404,7 +404,7 @@ Solo los usuarios con rol **Administrador** pueden acceder a la seccion de Ajust
 
 ### Whitelabel (Marca Blanca)
 Personalice la apariencia del CRM:
-- **Nombre de la aplicacion:** Cambie "InmoCRM España" por el nombre de su agencia.
+- **Nombre de la aplicacion:** Cambie "Tinoprop" por el nombre de su agencia.
 - **Logo:** Suba su logotipo (aparecera en el menu lateral y en el login).
 - **Favicon:** Suba el icono que aparece en la pestaña del navegador.
 - **Color primario:** Cambie el color principal de la interfaz (botones, enlaces, menu activo).
@@ -473,4 +473,4 @@ Contacte con el administrador del sistema o con el equipo de soporte tecnico a t
 
 ---
 
-*InmoCRM España v1.2.0 - Todos los derechos reservados.*
+*Tinoprop v1.2.0 - Todos los derechos reservados.*

@@ -8,15 +8,25 @@ $db = getDB();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
+    $pid = intval(post('pid'));
+    if ($pid > 0 && !isAdmin()) {
+        $ownerStmt = $db->prepare("SELECT usuario_id FROM presupuestos WHERE id = ? LIMIT 1");
+        $ownerStmt->execute([$pid]);
+        $ownerId = intval($ownerStmt->fetchColumn());
+        if ($ownerId !== intval(currentUserId())) {
+            setFlash('danger', 'No tienes permisos sobre este presupuesto.');
+            header('Location: index.php');
+            exit;
+        }
+    }
     if (post('accion') === 'cambiar_estado') {
         $validos = ['borrador','enviado','aceptado','rechazado','expirado','convertido'];
         $estado = post('nuevo_estado');
         if (in_array($estado, $validos)) {
-            $db->prepare("UPDATE presupuestos SET estado=? WHERE id=?")->execute([$estado, intval(post('pid'))]);
+            $db->prepare("UPDATE presupuestos SET estado=? WHERE id=?")->execute([$estado, $pid]);
         }
     }
     if (post('accion') === 'convertir_factura') {
-        $pid = intval(post('pid'));
         $p = $db->prepare("SELECT * FROM presupuestos WHERE id=?"); $p->execute([$pid]); $p=$p->fetch();
         if ($p && $p['estado'] === 'aceptado') {
             $config = $db->query("SELECT prefijo_factura, siguiente_numero FROM configuracion_pagos LIMIT 1")->fetch();
@@ -37,13 +47,25 @@ $pageTitle = 'Presupuestos';
 require_once __DIR__ . '/../../includes/header.php';
 
 $estado = get('estado', '');
-$where = $estado ? "WHERE p.estado = ?" : "";
-$params = $estado ? [$estado] : [];
-$presupuestos = $db->prepare("SELECT p.*, c.nombre as cli_nombre, c.apellidos as cli_apellidos FROM presupuestos p LEFT JOIN clientes c ON p.cliente_id=c.id $where ORDER BY p.created_at DESC");
+$where = [];
+$params = [];
+if (!isAdmin()) {
+    $where[] = 'p.usuario_id = ?';
+    $params[] = currentUserId();
+}
+if ($estado) {
+    $where[] = 'p.estado = ?';
+    $params[] = $estado;
+}
+$whereSql = empty($where) ? '' : ('WHERE ' . implode(' AND ', $where));
+$presupuestos = $db->prepare("SELECT p.*, c.nombre as cli_nombre, c.apellidos as cli_apellidos FROM presupuestos p LEFT JOIN clientes c ON p.cliente_id=c.id $whereSql ORDER BY p.created_at DESC");
 $presupuestos->execute($params); $presupuestos=$presupuestos->fetchAll();
 
 $estadoClases = ['borrador'=>'secondary','enviado'=>'primary','aceptado'=>'success','rechazado'=>'danger','expirado'=>'warning','convertido'=>'info'];
-$stats = $db->query("SELECT estado, COUNT(*) as total, SUM(total) as suma FROM presupuestos GROUP BY estado")->fetchAll(PDO::FETCH_UNIQUE);
+$statsSql = "SELECT estado, COUNT(*) as total, SUM(total) as suma FROM presupuestos" . (isAdmin() ? '' : ' WHERE usuario_id = ?') . " GROUP BY estado";
+$statsStmt = $db->prepare($statsSql);
+$statsStmt->execute(isAdmin() ? [] : [currentUserId()]);
+$stats = $statsStmt->fetchAll(PDO::FETCH_UNIQUE);
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">

@@ -9,6 +9,7 @@ $db = getDB();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
     $accion = post('accion');
+    $fid = intval(post('fid'));
     if ($accion === 'crear') {
         $nombre = trim(post('nombre'));
         if ($nombre) {
@@ -27,12 +28,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: editor.php?id='.$fid); exit;
         }
     }
+    if (($accion === 'eliminar' || $accion === 'toggle') && $fid > 0 && !isAdmin()) {
+        $ownerStmt = $db->prepare("SELECT usuario_id FROM funnels WHERE id = ? LIMIT 1");
+        $ownerStmt->execute([$fid]);
+        $ownerId = intval($ownerStmt->fetchColumn());
+        if ($ownerId !== intval(currentUserId())) {
+            setFlash('danger', 'No tienes permisos sobre este funnel.');
+            header('Location: index.php');
+            exit;
+        }
+    }
+
     if ($accion === 'eliminar') {
-        $db->prepare("DELETE FROM funnels WHERE id=?")->execute([intval(post('fid'))]);
+        $db->prepare("DELETE FROM funnels WHERE id=?")->execute([$fid]);
         setFlash('success','Funnel eliminado.');
     }
     if ($accion === 'toggle') {
-        $db->prepare("UPDATE funnels SET activo = NOT activo WHERE id=?")->execute([intval(post('fid'))]);
+        $db->prepare("UPDATE funnels SET activo = NOT activo WHERE id=?")->execute([$fid]);
     }
     header('Location: index.php'); exit;
 }

@@ -12,6 +12,11 @@ if ($id) {
     $stmt->execute([$id]);
     $cliente = $stmt->fetch();
     if (!$cliente) { setFlash('danger', 'Cliente no encontrado.'); header('Location: index.php'); exit; }
+    if (!isAdmin() && intval($cliente['agente_id']) !== intval(currentUserId())) {
+        setFlash('danger', 'No tienes permisos para editar este cliente.');
+        header('Location: index.php');
+        exit;
+    }
     $pageTitle = 'Editar Cliente';
 }
 
@@ -41,7 +46,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'habitaciones_min' => post('habitaciones_min') ?: null,
         'superficie_min' => post('superficie_min') ?: null,
         'operacion_interes' => post('operacion_interes') ?: null,
-        'agente_id' => post('agente_id') ?: currentUserId(),
+        'agente_id' => isAdmin()
+            ? (post('agente_id') ?: ($cliente['agente_id'] ?? currentUserId()))
+            : ($cliente['agente_id'] ?? currentUserId()),
         'activo' => isset($_POST['activo']) ? 1 : 0,
     ];
 

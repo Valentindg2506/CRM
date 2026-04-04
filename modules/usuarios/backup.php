@@ -5,10 +5,12 @@ require_once __DIR__ . '/../../includes/backup.php';
 requireAdmin();
 
 $accion = get('accion');
+$accionPost = post('accion');
 $db = getDB();
 
 // Crear backup
-if ($accion === 'crear') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $accionPost === 'crear') {
+    verifyCsrf();
     $result = generarBackup();
     if (isset($result['success'])) {
         // Limpiar backups antiguos (mantener 10)
@@ -29,8 +31,10 @@ if ($accion === 'descargar' && get('file')) {
 }
 
 // Eliminar backup
-if ($accion === 'eliminar' && get('file') && get('csrf') === csrfToken()) {
-    if (eliminarBackup(get('file'))) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $accionPost === 'eliminar') {
+    verifyCsrf();
+    $file = post('file');
+    if ($file && eliminarBackup($file)) {
         setFlash('success', 'Backup eliminado.');
     } else {
         setFlash('danger', 'No se pudo eliminar el backup.');
@@ -54,9 +58,11 @@ $s = $db->prepare("SELECT COUNT(*) as total FROM information_schema.tables WHERE
             <?= round(($dbSize['size'] ?? 0) / 1024 / 1024, 2) ?> MB
         </span>
     </div>
-    <a href="backup.php?accion=crear" class="btn btn-primary" onclick="this.innerHTML='<i class=\'bi bi-hourglass-split\'></i> Generando...'; this.classList.add('disabled');">
-        <i class="bi bi-database-down"></i> Crear Backup Ahora
-    </a>
+    <form method="POST" class="d-inline" onsubmit="this.querySelector('button').innerHTML='<i class=\'bi bi-hourglass-split\'></i> Generando...'; this.querySelector('button').classList.add('disabled');">
+        <?= csrfField() ?>
+        <input type="hidden" name="accion" value="crear">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-database-down"></i> Crear Backup Ahora</button>
+    </form>
 </div>
 
 <div class="card">
@@ -73,7 +79,12 @@ $s = $db->prepare("SELECT COUNT(*) as total FROM information_schema.tables WHERE
                 <td>
                     <div class="btn-group btn-group-sm">
                         <a href="backup.php?accion=descargar&file=<?= urlencode($b['filename']) ?>" class="btn btn-outline-primary"><i class="bi bi-download"></i> Descargar</a>
-                        <a href="backup.php?accion=eliminar&file=<?= urlencode($b['filename']) ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-danger" data-confirm="Eliminar este backup?"><i class="bi bi-trash"></i></a>
+                        <form method="POST" class="d-inline" onsubmit="return confirm('Eliminar este backup?')">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="accion" value="eliminar">
+                            <input type="hidden" name="file" value="<?= sanitize($b['filename']) ?>">
+                            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i></button>
+                        </form>
                     </div>
                 </td>
             </tr>
@@ -90,7 +101,7 @@ $s = $db->prepare("SELECT COUNT(*) as total FROM information_schema.tables WHERE
 
 <div class="alert alert-info mt-3">
     <i class="bi bi-info-circle"></i> <strong>Recomendacion:</strong> Programa backups regulares. Se mantienen los ultimos 10 backups automaticamente.
-    En Hostinger puedes crear un cron job que llame a <code><?= APP_URL ?>/cron/backup.php?key=TU_CLAVE_SECRETA</code>
+    En Hostinger puedes crear un cron job que llame a <code><?= APP_URL ?>/cron/backup.php?key=TU_VALOR_DE_CRON_BACKUP_KEY</code>
 </div>
 
 <?php require_once __DIR__ . '/../../includes/footer.php'; ?>

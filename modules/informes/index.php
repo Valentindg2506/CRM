@@ -4,7 +4,7 @@ require_once __DIR__ . '/../../includes/header.php';
 
 $db = getDB();
 $isAdm = isAdmin();
-$agenteCond = $isAdm ? '' : ' AND agente_id = ' . intval(currentUserId());
+$agenteId = intval(currentUserId());
 
 // Periodo seleccionado
 $periodo = get('periodo', 'mes');
@@ -14,61 +14,138 @@ $mes = intval(get('mes_num', date('m')));
 // ==========================================
 // ESTADISTICAS DE PROPIEDADES
 // ==========================================
-$propPorTipo = $db->query("SELECT tipo, COUNT(*) as total FROM propiedades WHERE 1=1 $agenteCond GROUP BY tipo ORDER BY total DESC")->fetchAll();
-$propPorEstado = $db->query("SELECT estado, COUNT(*) as total FROM propiedades WHERE 1=1 $agenteCond GROUP BY estado")->fetchAll();
-$propPorOperacion = $db->query("SELECT operacion, COUNT(*) as total FROM propiedades WHERE 1=1 $agenteCond GROUP BY operacion")->fetchAll();
-$propPorProvincia = $db->query("SELECT provincia, COUNT(*) as total FROM propiedades WHERE provincia IS NOT NULL $agenteCond GROUP BY provincia ORDER BY total DESC LIMIT 10")->fetchAll();
+if ($isAdm) {
+    $propPorTipo = $db->query("SELECT tipo, COUNT(*) as total FROM propiedades WHERE 1=1 GROUP BY tipo ORDER BY total DESC")->fetchAll();
+    $propPorEstado = $db->query("SELECT estado, COUNT(*) as total FROM propiedades WHERE 1=1 GROUP BY estado")->fetchAll();
+    $propPorOperacion = $db->query("SELECT operacion, COUNT(*) as total FROM propiedades WHERE 1=1 GROUP BY operacion")->fetchAll();
+    $propPorProvincia = $db->query("SELECT provincia, COUNT(*) as total FROM propiedades WHERE provincia IS NOT NULL GROUP BY provincia ORDER BY total DESC LIMIT 10")->fetchAll();
+} else {
+    $stmt = $db->prepare("SELECT tipo, COUNT(*) as total FROM propiedades WHERE 1=1 AND agente_id = ? GROUP BY tipo ORDER BY total DESC");
+    $stmt->execute([$agenteId]);
+    $propPorTipo = $stmt->fetchAll();
+
+    $stmt = $db->prepare("SELECT estado, COUNT(*) as total FROM propiedades WHERE 1=1 AND agente_id = ? GROUP BY estado");
+    $stmt->execute([$agenteId]);
+    $propPorEstado = $stmt->fetchAll();
+
+    $stmt = $db->prepare("SELECT operacion, COUNT(*) as total FROM propiedades WHERE 1=1 AND agente_id = ? GROUP BY operacion");
+    $stmt->execute([$agenteId]);
+    $propPorOperacion = $stmt->fetchAll();
+
+    $stmt = $db->prepare("SELECT provincia, COUNT(*) as total FROM propiedades WHERE provincia IS NOT NULL AND agente_id = ? GROUP BY provincia ORDER BY total DESC LIMIT 10");
+    $stmt->execute([$agenteId]);
+    $propPorProvincia = $stmt->fetchAll();
+}
 
 // Precio medio por tipo
-$precioMedio = $db->query("SELECT tipo, ROUND(AVG(precio), 2) as precio_medio, ROUND(AVG(CASE WHEN superficie_construida > 0 THEN precio/superficie_construida END), 2) as precio_m2
-    FROM propiedades WHERE estado = 'disponible' $agenteCond GROUP BY tipo ORDER BY precio_medio DESC")->fetchAll();
+if ($isAdm) {
+    $precioMedio = $db->query("SELECT tipo, ROUND(AVG(precio), 2) as precio_medio, ROUND(AVG(CASE WHEN superficie_construida > 0 THEN precio/superficie_construida END), 2) as precio_m2
+        FROM propiedades WHERE estado = 'disponible' GROUP BY tipo ORDER BY precio_medio DESC")->fetchAll();
+} else {
+    $stmt = $db->prepare("SELECT tipo, ROUND(AVG(precio), 2) as precio_medio, ROUND(AVG(CASE WHEN superficie_construida > 0 THEN precio/superficie_construida END), 2) as precio_m2
+        FROM propiedades WHERE estado = 'disponible' AND agente_id = ? GROUP BY tipo ORDER BY precio_medio DESC");
+    $stmt->execute([$agenteId]);
+    $precioMedio = $stmt->fetchAll();
+}
 
 // ==========================================
 // ESTADISTICAS DE VENTAS/ALQUILERES
 // ==========================================
-$ventasMes = $db->query("SELECT DATE_FORMAT(updated_at, '%Y-%m') as mes, COUNT(*) as total,
-    SUM(CASE WHEN operacion = 'venta' THEN 1 ELSE 0 END) as ventas,
-    SUM(CASE WHEN operacion = 'alquiler' THEN 1 ELSE 0 END) as alquileres
-    FROM propiedades WHERE estado IN ('vendido','alquilado') $agenteCond
-    AND updated_at >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
-    GROUP BY DATE_FORMAT(updated_at, '%Y-%m') ORDER BY mes")->fetchAll();
+if ($isAdm) {
+    $ventasMes = $db->query("SELECT DATE_FORMAT(updated_at, '%Y-%m') as mes, COUNT(*) as total,
+        SUM(CASE WHEN operacion = 'venta' THEN 1 ELSE 0 END) as ventas,
+        SUM(CASE WHEN operacion = 'alquiler' THEN 1 ELSE 0 END) as alquileres
+        FROM propiedades WHERE estado IN ('vendido','alquilado')
+        AND updated_at >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+        GROUP BY DATE_FORMAT(updated_at, '%Y-%m') ORDER BY mes")->fetchAll();
+} else {
+    $stmt = $db->prepare("SELECT DATE_FORMAT(updated_at, '%Y-%m') as mes, COUNT(*) as total,
+        SUM(CASE WHEN operacion = 'venta' THEN 1 ELSE 0 END) as ventas,
+        SUM(CASE WHEN operacion = 'alquiler' THEN 1 ELSE 0 END) as alquileres
+        FROM propiedades WHERE estado IN ('vendido','alquilado')
+        AND agente_id = ?
+        AND updated_at >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+        GROUP BY DATE_FORMAT(updated_at, '%Y-%m') ORDER BY mes");
+    $stmt->execute([$agenteId]);
+    $ventasMes = $stmt->fetchAll();
+}
 
 // ==========================================
 // ESTADISTICAS DE CLIENTES
 // ==========================================
-$clientesPorTipo = $db->query("SELECT
-    SUM(FIND_IN_SET('comprador', tipo) > 0) as compradores,
-    SUM(FIND_IN_SET('vendedor', tipo) > 0) as vendedores,
-    SUM(FIND_IN_SET('inquilino', tipo) > 0) as inquilinos,
-    SUM(FIND_IN_SET('propietario', tipo) > 0) as propietarios,
-    SUM(FIND_IN_SET('inversor', tipo) > 0) as inversores,
-    COUNT(*) as total
-    FROM clientes WHERE activo = 1" . ($isAdm ? '' : " AND agente_id = " . intval(currentUserId())))->fetch();
+if ($isAdm) {
+    $clientesPorTipo = $db->query("SELECT
+        SUM(FIND_IN_SET('comprador', tipo) > 0) as compradores,
+        SUM(FIND_IN_SET('vendedor', tipo) > 0) as vendedores,
+        SUM(FIND_IN_SET('inquilino', tipo) > 0) as inquilinos,
+        SUM(FIND_IN_SET('propietario', tipo) > 0) as propietarios,
+        SUM(FIND_IN_SET('inversor', tipo) > 0) as inversores,
+        COUNT(*) as total
+        FROM clientes WHERE activo = 1")->fetch();
+} else {
+    $stmt = $db->prepare("SELECT
+        SUM(FIND_IN_SET('comprador', tipo) > 0) as compradores,
+        SUM(FIND_IN_SET('vendedor', tipo) > 0) as vendedores,
+        SUM(FIND_IN_SET('inquilino', tipo) > 0) as inquilinos,
+        SUM(FIND_IN_SET('propietario', tipo) > 0) as propietarios,
+        SUM(FIND_IN_SET('inversor', tipo) > 0) as inversores,
+        COUNT(*) as total
+        FROM clientes WHERE activo = 1 AND agente_id = ?");
+    $stmt->execute([$agenteId]);
+    $clientesPorTipo = $stmt->fetch();
+}
 
-$clientesPorOrigen = $db->query("SELECT origen, COUNT(*) as total FROM clientes WHERE activo = 1" .
-    ($isAdm ? '' : " AND agente_id = " . intval(currentUserId())) . " GROUP BY origen ORDER BY total DESC")->fetchAll();
+if ($isAdm) {
+    $clientesPorOrigen = $db->query("SELECT origen, COUNT(*) as total FROM clientes WHERE activo = 1 GROUP BY origen ORDER BY total DESC")->fetchAll();
+} else {
+    $stmt = $db->prepare("SELECT origen, COUNT(*) as total FROM clientes WHERE activo = 1 AND agente_id = ? GROUP BY origen ORDER BY total DESC");
+    $stmt->execute([$agenteId]);
+    $clientesPorOrigen = $stmt->fetchAll();
+}
 
 // ==========================================
 // ESTADISTICAS DE VISITAS
 // ==========================================
-$visitasMesData = $db->query("SELECT DATE_FORMAT(fecha, '%Y-%m') as mes, COUNT(*) as total,
-    SUM(estado = 'realizada') as realizadas,
-    SUM(estado = 'cancelada') as canceladas,
-    SUM(estado = 'no_presentado') as no_presentados
-    FROM visitas WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)" .
-    ($isAdm ? '' : " AND agente_id = " . intval(currentUserId())) .
-    " GROUP BY DATE_FORMAT(fecha, '%Y-%m') ORDER BY mes")->fetchAll();
+if ($isAdm) {
+    $visitasMesData = $db->query("SELECT DATE_FORMAT(fecha, '%Y-%m') as mes, COUNT(*) as total,
+        SUM(estado = 'realizada') as realizadas,
+        SUM(estado = 'cancelada') as canceladas,
+        SUM(estado = 'no_presentado') as no_presentados
+        FROM visitas WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+        GROUP BY DATE_FORMAT(fecha, '%Y-%m') ORDER BY mes")->fetchAll();
+} else {
+    $stmt = $db->prepare("SELECT DATE_FORMAT(fecha, '%Y-%m') as mes, COUNT(*) as total,
+        SUM(estado = 'realizada') as realizadas,
+        SUM(estado = 'cancelada') as canceladas,
+        SUM(estado = 'no_presentado') as no_presentados
+        FROM visitas WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+        AND agente_id = ?
+        GROUP BY DATE_FORMAT(fecha, '%Y-%m') ORDER BY mes");
+    $stmt->execute([$agenteId]);
+    $visitasMesData = $stmt->fetchAll();
+}
 
 // ==========================================
 // ESTADISTICAS FINANCIERAS
 // ==========================================
-$finanzasMes = $db->query("SELECT DATE_FORMAT(fecha, '%Y-%m') as mes,
-    SUM(CASE WHEN tipo LIKE 'comision%' AND estado = 'cobrado' THEN importe_total ELSE 0 END) as comisiones_cobradas,
-    SUM(CASE WHEN tipo = 'honorarios' AND estado = 'cobrado' THEN importe_total ELSE 0 END) as honorarios_cobrados,
-    SUM(CASE WHEN tipo = 'gasto' AND estado = 'pagado' THEN importe_total ELSE 0 END) as gastos
-    FROM finanzas WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)" .
-    ($isAdm ? '' : " AND agente_id = " . intval(currentUserId())) .
-    " GROUP BY DATE_FORMAT(fecha, '%Y-%m') ORDER BY mes")->fetchAll();
+if ($isAdm) {
+    $finanzasMes = $db->query("SELECT DATE_FORMAT(fecha, '%Y-%m') as mes,
+        SUM(CASE WHEN tipo LIKE 'comision%' AND estado = 'cobrado' THEN importe_total ELSE 0 END) as comisiones_cobradas,
+        SUM(CASE WHEN tipo = 'honorarios' AND estado = 'cobrado' THEN importe_total ELSE 0 END) as honorarios_cobrados,
+        SUM(CASE WHEN tipo = 'gasto' AND estado = 'pagado' THEN importe_total ELSE 0 END) as gastos
+        FROM finanzas WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+        GROUP BY DATE_FORMAT(fecha, '%Y-%m') ORDER BY mes")->fetchAll();
+} else {
+    $stmt = $db->prepare("SELECT DATE_FORMAT(fecha, '%Y-%m') as mes,
+        SUM(CASE WHEN tipo LIKE 'comision%' AND estado = 'cobrado' THEN importe_total ELSE 0 END) as comisiones_cobradas,
+        SUM(CASE WHEN tipo = 'honorarios' AND estado = 'cobrado' THEN importe_total ELSE 0 END) as honorarios_cobrados,
+        SUM(CASE WHEN tipo = 'gasto' AND estado = 'pagado' THEN importe_total ELSE 0 END) as gastos
+        FROM finanzas WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+        AND agente_id = ?
+        GROUP BY DATE_FORMAT(fecha, '%Y-%m') ORDER BY mes");
+    $stmt->execute([$agenteId]);
+    $finanzasMes = $stmt->fetchAll();
+}
 
 // Ranking de agentes (solo admin)
 $rankingAgentes = [];

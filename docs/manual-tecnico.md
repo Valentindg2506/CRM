@@ -1,4 +1,4 @@
-# Manual Técnico - InmoCRM
+# Manual Técnico - Tinoprop
 
 ## 1. Arquitectura del Sistema
 

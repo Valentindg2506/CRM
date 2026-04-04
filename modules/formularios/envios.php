@@ -12,6 +12,11 @@ $stmt = $db->prepare("SELECT * FROM formularios WHERE id = ?");
 $stmt->execute([$formId]);
 $form = $stmt->fetch();
 if (!$form) { setFlash('danger', 'Formulario no encontrado.'); header('Location: index.php'); exit; }
+if (!isAdmin() && intval($form['usuario_id']) !== intval(currentUserId())) {
+    setFlash('danger', 'No tienes permisos sobre este formulario.');
+    header('Location: index.php');
+    exit;
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();

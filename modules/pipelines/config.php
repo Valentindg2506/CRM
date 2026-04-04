@@ -11,6 +11,17 @@ if (!$id) {
 
 $db = getDB();
 
+function pipelineEtapasHasConversionColumn(PDO $db): bool {
+    try {
+        $stmt = $db->query("SHOW COLUMNS FROM pipeline_etapas LIKE 'permitir_conversion'");
+        return (bool) $stmt->fetch();
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+$hasConversionColumn = pipelineEtapasHasConversionColumn($db);
+
 // Obtener pipeline
 $stmt = $db->prepare("SELECT * FROM pipelines WHERE id = ?");
 $stmt->execute([$id]);
@@ -91,6 +102,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'eliminar_etapa'
     exit;
 }
 
+// Configurar si la etapa permite conversion prospecto->cliente
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'toggle_conversion_etapa') {
+    verifyCsrf();
+
+    if (!$hasConversionColumn) {
+        setFlash('danger', 'Esta instalacion no soporta configuracion de conversion por etapa. Ejecuta install_pipelines.php.');
+        header('Location: config.php?id=' . $id);
+        exit;
+    }
+
+    $etapaId = intval(post('etapa_id'));
+    $permitir = intval(post('permitir_conversion')) === 1 ? 1 : 0;
+    $stmtToggle = $db->prepare("UPDATE pipeline_etapas SET permitir_conversion = ? WHERE id = ? AND pipeline_id = ?");
+    $stmtToggle->execute([$permitir, $etapaId, $id]);
+    setFlash('success', 'Configuracion de conversion actualizada.');
+    header('Location: config.php?id=' . $id);
+    exit;
+}
+
 // Reordenar etapas
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'reordenar') {
     verifyCsrf();
@@ -113,9 +143,15 @@ $stmt->execute([$id]);
 $pipeline = $stmt->fetch();
 
 // Obtener etapas
-$stmtEtapas = $db->prepare("SELECT e.*, (SELECT COUNT(*) FROM pipeline_items WHERE etapa_id = e.id) as total_items FROM pipeline_etapas e WHERE e.pipeline_id = ? ORDER BY e.orden ASC");
-$stmtEtapas->execute([$id]);
-$etapas = $stmtEtapas->fetchAll();
+if ($hasConversionColumn) {
+    $stmtEtapas = $db->prepare("SELECT e.*, (SELECT COUNT(*) FROM pipeline_items WHERE etapa_id = e.id) as total_items FROM pipeline_etapas e WHERE e.pipeline_id = ? ORDER BY e.orden ASC");
+    $stmtEtapas->execute([$id]);
+    $etapas = $stmtEtapas->fetchAll();
+} else {
+    $stmtEtapas = $db->prepare("SELECT e.*, 0 AS permitir_conversion, (SELECT COUNT(*) FROM pipeline_items WHERE etapa_id = e.id) as total_items FROM pipeline_etapas e WHERE e.pipeline_id = ? ORDER BY e.orden ASC");
+    $stmtEtapas->execute([$id]);
+    $etapas = $stmtEtapas->fetchAll();
+}
 ?>
 
 <div class="d-flex align-items-center gap-2 mb-4">
@@ -175,8 +211,26 @@ $etapas = $stmtEtapas->fetchAll();
                         <div class="flex-grow-1">
                             <strong><?= sanitize($etapa['nombre']) ?></strong>
                             <small class="text-muted ms-2"><?= $etapa['total_items'] ?> item<?= $etapa['total_items'] != 1 ? 's' : '' ?></small>
+                            <?php if ($hasConversionColumn): ?>
+                                <div class="small mt-1">
+                                    <span class="badge <?= !empty($etapa['permitir_conversion']) ? 'bg-success' : 'bg-secondary' ?>">
+                                        <?= !empty($etapa['permitir_conversion']) ? 'Permite conversion' : 'Sin conversion' ?>
+                                    </span>
+                                </div>
+                            <?php endif; ?>
                         </div>
                         <div class="d-flex gap-1">
+                            <?php if ($hasConversionColumn): ?>
+                            <form method="POST" class="d-inline">
+                                <input type="hidden" name="accion" value="toggle_conversion_etapa">
+                                <input type="hidden" name="etapa_id" value="<?= intval($etapa['id']) ?>">
+                                <input type="hidden" name="permitir_conversion" value="<?= !empty($etapa['permitir_conversion']) ? '0' : '1' ?>">
+                                <?= csrfField() ?>
+                                <button type="submit" class="btn btn-sm <?= !empty($etapa['permitir_conversion']) ? 'btn-outline-success' : 'btn-outline-secondary' ?>" title="Activar/desactivar conversion prospecto->cliente">
+                                    <i class="bi bi-person-check"></i>
+                                </button>
+                            </form>
+                            <?php endif; ?>
                             <?php if ($i > 0): ?>
                             <form method="POST" class="d-inline">
                                 <input type="hidden" name="accion" value="reordenar">

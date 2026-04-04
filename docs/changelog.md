@@ -1,4 +1,4 @@
-# Changelog - InmoCRM
+# Changelog - Tinoprop
 
 Todos los cambios notables del proyecto se documentan en este archivo.
 

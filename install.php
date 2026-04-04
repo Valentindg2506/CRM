@@ -9,10 +9,33 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
-$host = 'localhost';
-$user = 'u908766211_TinoProp_es';
-$pass = '6l/~gX#>V@R';
-$dbname = 'u908766211_TinoProp_es';
+// Cargar configuracion de base de datos
+require_once __DIR__ . '/config/database.php';
+
+$host = DB_HOST;
+$user = DB_USER;
+$pass = DB_PASS;
+$dbname = DB_NAME;
+
+try {
+    // Verificar si ya esta instalado
+    $pdoCheck = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $user, $pass, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+    ]);
+    $result = $pdoCheck->query("SELECT COUNT(*) FROM usuarios")->fetchColumn();
+    if ($result > 0) {
+        echo "<!DOCTYPE html><html lang='es'><head><meta charset='UTF-8'><title>Instalacion</title>
+        <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'></head>
+        <body class='bg-light'><div class='container mt-5'><div class='row justify-content-center'><div class='col-md-6'>
+        <div class='card shadow'><div class='card-body text-center p-5'>
+        <h2 class='text-warning mb-3'>⚠️ Ya instalado</h2>
+        <p>El CRM ya esta instalado y funcionando. Por seguridad, elimina este archivo del servidor.</p>
+        <a href='index.php' class='btn btn-primary'>Ir al CRM</a></div></div></div></div></div></body></html>";
+        exit;
+    }
+} catch (PDOException $e) {
+    // La BD o tabla no existe aún, continuar con la instalación
+}
 
 try {
     // Conectar sin seleccionar base de datos
@@ -333,7 +356,7 @@ try {
 <head>
     <meta charset='UTF-8'>
     <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>Instalacion - InmoCRM</title>
+    <title>Instalacion - Tinoprop</title>
     <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'>
 </head>
 <body class='bg-light'>

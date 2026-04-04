@@ -6,6 +6,23 @@ requireAdmin();
 $db = getDB();
 $id = intval(get('id'));
 $usuario = null;
+$customRoleId = null;
+
+function userRolesSystemAvailable(PDO $db): bool {
+    try {
+        $db->query("SELECT 1 FROM roles LIMIT 1");
+        $db->query("SELECT 1 FROM usuario_roles LIMIT 1");
+        return true;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+$rolesSystemAvailable = userRolesSystemAvailable($db);
+$customRoles = [];
+if ($rolesSystemAvailable) {
+    $customRoles = $db->query("SELECT id, nombre FROM roles WHERE activo = 1 AND LOWER(nombre) <> 'agente' ORDER BY nombre ASC")->fetchAll();
+}
 
 if ($id) {
     $stmt = $db->prepare("SELECT * FROM usuarios WHERE id = ?");
@@ -13,6 +30,12 @@ if ($id) {
     $usuario = $stmt->fetch();
     if (!$usuario) { setFlash('danger', 'Usuario no encontrado.'); header('Location: index.php'); exit; }
     $pageTitle = 'Editar Usuario';
+
+    if ($rolesSystemAvailable) {
+        $stmtUr = $db->prepare("SELECT role_id FROM usuario_roles WHERE user_id = ? LIMIT 1");
+        $stmtUr->execute([$id]);
+        $customRoleId = $stmtUr->fetchColumn() ?: null;
+    }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -26,6 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'rol' => post('rol', 'agente'),
         'activo' => isset($_POST['activo']) ? 1 : 0,
     ];
+    $selectedCustomRoleId = intval(post('custom_role_id')) ?: null;
 
     if (empty($data['nombre']) || empty($data['email'])) {
         $error = 'Nombre y email son obligatorios.';
@@ -43,6 +67,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $values[] = $id;
                 $db->prepare("UPDATE usuarios SET " . implode(', ', $fields) . " WHERE id = ?")->execute($values);
+
+                if ($rolesSystemAvailable) {
+                    if ($data['rol'] === 'admin' || !$selectedCustomRoleId) {
+                        $db->prepare("DELETE FROM usuario_roles WHERE user_id = ?")->execute([$id]);
+                    } else {
+                        $stmtRole = $db->prepare("SELECT id FROM roles WHERE id = ? AND activo = 1 LIMIT 1");
+                        $stmtRole->execute([$selectedCustomRoleId]);
+                        if ($stmtRole->fetchColumn()) {
+                            $db->prepare("REPLACE INTO usuario_roles (user_id, role_id) VALUES (?, ?)")->execute([$id, $selectedCustomRoleId]);
+                        }
+                    }
+                }
+
                 registrarActividad('editar', 'usuario', $id, $data['nombre']);
             } else {
                 if (empty($_POST['password'])) {
@@ -52,7 +89,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $fields = array_keys($data);
                     $placeholders = str_repeat('?,', count($fields) - 1) . '?';
                     $db->prepare("INSERT INTO usuarios (`" . implode('`,`', $fields) . "`) VALUES ($placeholders)")->execute(array_values($data));
-                    registrarActividad('crear', 'usuario', $db->lastInsertId(), $data['nombre']);
+                    $newUserId = intval($db->lastInsertId());
+
+                    if ($rolesSystemAvailable && $data['rol'] !== 'admin' && $selectedCustomRoleId) {
+                        $stmtRole = $db->prepare("SELECT id FROM roles WHERE id = ? AND activo = 1 LIMIT 1");
+                        $stmtRole->execute([$selectedCustomRoleId]);
+                        if ($stmtRole->fetchColumn()) {
+                            $db->prepare("REPLACE INTO usuario_roles (user_id, role_id) VALUES (?, ?)")->execute([$newUserId, $selectedCustomRoleId]);
+                        }
+                    }
+
+                    registrarActividad('crear', 'usuario', $newUserId, $data['nombre']);
                 }
             }
 
@@ -106,11 +153,23 @@ $u = $usuario ?? [];
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Rol</label>
-                    <select name="rol" class="form-select">
+                    <select name="rol" id="rol_base" class="form-select">
                         <option value="agente" <?= ($u['rol'] ?? 'agente') === 'agente' ? 'selected' : '' ?>>Agente</option>
                         <option value="admin" <?= ($u['rol'] ?? '') === 'admin' ? 'selected' : '' ?>>Administrador</option>
                     </select>
                 </div>
+                <?php if ($rolesSystemAvailable): ?>
+                <div class="col-md-3">
+                    <label class="form-label">Rol personalizado</label>
+                    <select name="custom_role_id" id="custom_role_id" class="form-select">
+                        <option value="">Sin rol personalizado</option>
+                        <?php foreach ($customRoles as $cr): ?>
+                            <option value="<?= intval($cr['id']) ?>" <?= intval($customRoleId ?: 0) === intval($cr['id']) ? 'selected' : '' ?>><?= sanitize($cr['nombre']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small class="text-muted">No afecta al rol base agente. Si eliges admin, se ignora este campo.</small>
+                </div>
+                <?php endif; ?>
                 <div class="col-md-3">
                     <label class="form-label">Estado</label>
                     <div class="form-check mt-2">
@@ -126,5 +185,27 @@ $u = $usuario ?? [];
         <a href="index.php" class="btn btn-outline-secondary btn-lg">Cancelar</a>
     </div>
 </form>
+
+<?php if ($rolesSystemAvailable): ?>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var rolBase = document.getElementById('rol_base');
+    var customRole = document.getElementById('custom_role_id');
+    if (!rolBase || !customRole) return;
+
+    function syncCustomRoleState() {
+        if (rolBase.value === 'admin') {
+            customRole.value = '';
+            customRole.disabled = true;
+        } else {
+            customRole.disabled = false;
+        }
+    }
+
+    rolBase.addEventListener('change', syncCustomRoleState);
+    syncCustomRoleState();
+});
+</script>
+<?php endif; ?>
 
 <?php require_once __DIR__ . '/../../includes/footer.php'; ?>

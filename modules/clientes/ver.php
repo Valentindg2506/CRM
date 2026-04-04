@@ -5,25 +5,29 @@ require_once __DIR__ . '/../../includes/header.php';
 $db = getDB();
 $id = intval(get('id'));
 
+function clienteSafeFetchAll(PDO $db, $sql, array $params = []) {
+    try {
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
 $stmt = $db->prepare("SELECT c.*, u.nombre as agente_nombre, u.apellidos as agente_apellidos FROM clientes c LEFT JOIN usuarios u ON c.agente_id = u.id WHERE c.id = ?");
 $stmt->execute([$id]);
 $c = $stmt->fetch();
 if (!$c) { setFlash('danger', 'Cliente no encontrado.'); header('Location: index.php'); exit; }
 
 // Propiedades como propietario
-$propiedades = $db->prepare("SELECT id, referencia, titulo, tipo, operacion, precio, estado FROM propiedades WHERE propietario_id = ? ORDER BY created_at DESC");
-$propiedades->execute([$id]);
-$propiedades = $propiedades->fetchAll();
+$propiedades = clienteSafeFetchAll($db, "SELECT id, referencia, titulo, tipo, operacion, precio, estado FROM propiedades WHERE propietario_id = ? ORDER BY created_at DESC", [$id]);
 
 // Visitas
-$visitas = $db->prepare("SELECT v.*, p.referencia, p.titulo as propiedad FROM visitas v JOIN propiedades p ON v.propiedad_id = p.id WHERE v.cliente_id = ? ORDER BY v.fecha DESC LIMIT 10");
-$visitas->execute([$id]);
-$visitas = $visitas->fetchAll();
+$visitas = clienteSafeFetchAll($db, "SELECT v.*, p.referencia, p.titulo as propiedad FROM visitas v JOIN propiedades p ON v.propiedad_id = p.id WHERE v.cliente_id = ? ORDER BY v.fecha DESC LIMIT 10", [$id]);
 
 // Documentos
-$docs = $db->prepare("SELECT * FROM documentos WHERE cliente_id = ? ORDER BY created_at DESC");
-$docs->execute([$id]);
-$docs = $docs->fetchAll();
+$docs = clienteSafeFetchAll($db, "SELECT * FROM documentos WHERE cliente_id = ? ORDER BY created_at DESC", [$id]);
 
 // Propiedades compatibles (matching)
 $matchQuery = "SELECT p.id, p.referencia, p.titulo, p.tipo, p.precio, p.localidad, p.provincia, p.habitaciones, p.superficie_construida
@@ -52,9 +56,13 @@ if ($c['superficie_min']) {
 }
 $matchQuery .= " ORDER BY p.created_at DESC LIMIT 10";
 
-$stmtMatch = $db->prepare($matchQuery);
-$stmtMatch->execute($matchParams);
-$matches = $stmtMatch->fetchAll();
+$matches = clienteSafeFetchAll($db, $matchQuery, $matchParams);
+
+// Tags (opcional)
+$clienteTags = clienteSafeFetchAll($db, "SELECT t.id, t.nombre, t.color FROM tags t JOIN cliente_tags ct ON t.id = ct.tag_id WHERE ct.cliente_id = ? ORDER BY t.nombre", [$id]);
+
+// Campos personalizados (opcional)
+$customFields = clienteSafeFetchAll($db, "SELECT cf.*, cfv.valor FROM custom_fields cf LEFT JOIN custom_field_values cfv ON cf.id = cfv.field_id AND cfv.entidad_id = ? WHERE cf.entidad = 'cliente' AND cf.activo = 1 ORDER BY cf.orden", [$id]);
 
 $tipos = getTiposPropiedad();
 ?>
@@ -70,7 +78,11 @@ $tipos = getTiposPropiedad();
         <a href="timeline.php?id=<?= $id ?>" class="btn btn-outline-secondary"><i class="bi bi-clock-history"></i> Timeline</a>
         <a href="form.php?id=<?= $id ?>" class="btn btn-outline-primary"><i class="bi bi-pencil"></i> Editar</a>
         <a href="rgpd.php?id=<?= $id ?>" class="btn btn-outline-info"><i class="bi bi-shield-lock"></i> RGPD</a>
-        <a href="delete.php?id=<?= $id ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-danger" data-confirm="Eliminar este cliente?"><i class="bi bi-trash"></i> Eliminar</a>
+        <form method="POST" action="delete.php" class="d-inline" onsubmit="return confirm('Eliminar este cliente?')">
+            <?= csrfField() ?>
+            <input type="hidden" name="id" value="<?= intval($id) ?>">
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i> Eliminar</button>
+        </form>
     </div>
 </div>
 
@@ -146,9 +158,6 @@ $tipos = getTiposPropiedad();
             </div>
             <div class="card-body" id="tagsContainer">
                 <?php
-                $stmtTags = $db->prepare("SELECT t.id, t.nombre, t.color FROM tags t JOIN cliente_tags ct ON t.id = ct.tag_id WHERE ct.cliente_id = ? ORDER BY t.nombre");
-                $stmtTags->execute([$id]);
-                $clienteTags = $stmtTags->fetchAll();
                 if (empty($clienteTags)): ?>
                 <span class="text-muted" id="noTagsMsg">Sin etiquetas</span>
                 <?php else:
@@ -163,8 +172,6 @@ $tipos = getTiposPropiedad();
 
         <!-- Campos Personalizados -->
         <?php
-        $stmtCF = $db->query("SELECT cf.*, cfv.valor FROM custom_fields cf LEFT JOIN custom_field_values cfv ON cf.id = cfv.field_id AND cfv.entidad_id = " . intval($id) . " WHERE cf.entidad = 'cliente' AND cf.activo = 1 ORDER BY cf.orden");
-        $customFields = $stmtCF->fetchAll();
         if (!empty($customFields)): ?>
         <div class="card mb-4">
             <div class="card-header"><i class="bi bi-ui-checks-grid"></i> Campos Personalizados</div>

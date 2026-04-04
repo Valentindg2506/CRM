@@ -8,23 +8,55 @@ requireLogin();
 require_once __DIR__ . '/../../includes/header.php';
 
 $db = getDB();
+
+function normalizeReportDate($value, $fallback) {
+    $value = trim((string)$value);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+        return $fallback;
+    }
+    $dt = DateTime::createFromFormat('Y-m-d', $value);
+    if (!$dt || $dt->format('Y-m-d') !== $value) {
+        return $fallback;
+    }
+    return $value;
+}
+
+$allowedRanges = ['7', '30', '90', '365', 'custom'];
 $rango = get('rango', '30');
-$desde = get('desde', date('Y-m-d', strtotime("-{$rango} days")));
-$hasta = get('hasta', date('Y-m-d'));
+if (!in_array($rango, $allowedRanges, true)) {
+    $rango = '30';
+}
 
 if ($rango === 'custom') {
-    $desde = get('desde', date('Y-m-d', strtotime('-30 days')));
-    $hasta = get('hasta', date('Y-m-d'));
+    $defaultDesde = date('Y-m-d', strtotime('-30 days'));
+    $defaultHasta = date('Y-m-d');
+    $desde = normalizeReportDate(get('desde', $defaultDesde), $defaultDesde);
+    $hasta = normalizeReportDate(get('hasta', $defaultHasta), $defaultHasta);
+    if (strtotime($desde) > strtotime($hasta)) {
+        $tmp = $desde;
+        $desde = $hasta;
+        $hasta = $tmp;
+    }
 } else {
-    $desde = date('Y-m-d', strtotime("-{$rango} days"));
+    $days = intval($rango);
+    if (!in_array((string)$days, ['7', '30', '90', '365'], true)) {
+        $days = 30;
+        $rango = '30';
+    }
+    $desde = date('Y-m-d', strtotime("-{$days} days"));
     $hasta = date('Y-m-d');
 }
 
-$prevDesde = date('Y-m-d', strtotime($desde) - (strtotime($hasta) - strtotime($desde)));
-$prevHasta = date('Y-m-d', strtotime($desde) - 1);
+$desdeTs = strtotime($desde);
+$hastaTs = strtotime($hasta);
+$prevDesde = date('Y-m-d', $desdeTs - ($hastaTs - $desdeTs));
+$prevHasta = date('Y-m-d', $desdeTs - 1);
 
 // KPIs
 function getKPI($db, $table, $dateCol, $desde, $hasta, $cond = '1=1') {
+    if (!preg_match('/^[a-zA-Z0-9_]+$/', $table) || !preg_match('/^[a-zA-Z0-9_]+$/', $dateCol)) {
+        return 0;
+    }
     $stmt = $db->prepare("SELECT COUNT(*) FROM $table WHERE $dateCol BETWEEN ? AND ? AND $cond");
     $stmt->execute([$desde, $hasta]);
     return $stmt->fetchColumn();
@@ -48,13 +80,27 @@ $clientesSemana = $db->prepare("SELECT YEARWEEK(created_at,1) as semana, COUNT(*
 $clientesSemana->execute([$desde, $hasta]);
 $clientesSemana = $clientesSemana->fetchAll();
 
-$visitasAgente = $db->query("SELECT u.nombre, COUNT(*) as total FROM visitas v JOIN usuarios u ON v.agente_id = u.id WHERE v.fecha BETWEEN '$desde' AND '$hasta' GROUP BY v.agente_id ORDER BY total DESC LIMIT 10")->fetchAll();
+$stmtVisitasAgente = $db->prepare("SELECT u.nombre, COUNT(*) as total
+    FROM visitas v
+    JOIN usuarios u ON v.agente_id = u.id
+    WHERE v.fecha BETWEEN ? AND ?
+    GROUP BY v.agente_id
+    ORDER BY total DESC
+    LIMIT 10");
+$stmtVisitasAgente->execute([$desde, $hasta]);
+$visitasAgente = $stmtVisitasAgente->fetchAll();
 
 $propEstado = $db->query("SELECT estado, COUNT(*) as total FROM propiedades GROUP BY estado")->fetchAll();
 
 $topZonas = $db->query("SELECT provincia, COUNT(*) as total FROM propiedades WHERE provincia IS NOT NULL AND provincia != '' GROUP BY provincia ORDER BY total DESC LIMIT 5")->fetchAll();
 
-$ingresosMes = $db->query("SELECT DATE_FORMAT(fecha,'%Y-%m') as mes, SUM(importe_total) as total FROM finanzas WHERE estado='cobrado' AND fecha >= DATE_SUB('$hasta', INTERVAL 12 MONTH) GROUP BY mes ORDER BY mes")->fetchAll();
+$stmtIngresosMes = $db->prepare("SELECT DATE_FORMAT(fecha,'%Y-%m') as mes, SUM(importe_total) as total
+    FROM finanzas
+    WHERE estado='cobrado' AND fecha >= DATE_SUB(?, INTERVAL 12 MONTH)
+    GROUP BY mes
+    ORDER BY mes");
+$stmtIngresosMes->execute([$hasta]);
+$ingresosMes = $stmtIngresosMes->fetchAll();
 
 $origenLeads = $db->prepare("SELECT origen, COUNT(*) as total FROM clientes WHERE created_at BETWEEN ? AND ? GROUP BY origen ORDER BY total DESC");
 $origenLeads->execute([$desde, $hasta]);
@@ -67,11 +113,15 @@ $fVisitasReal = getKPI($db,'visitas','fecha',$desde,$hasta,"estado='realizada'")
 $fCerradas = getKPI($db,'propiedades','updated_at',$desde,$hasta,"estado IN('vendido','alquilado')");
 
 // Ranking agentes
-$ranking = $db->query("SELECT u.nombre, u.apellidos,
-    (SELECT COUNT(*) FROM clientes c WHERE c.agente_id = u.id AND c.created_at BETWEEN '$desde' AND '$hasta') as clientes,
-    (SELECT COUNT(*) FROM visitas v WHERE v.agente_id = u.id AND v.fecha BETWEEN '$desde' AND '$hasta') as visitas,
-    (SELECT COALESCE(SUM(f.importe_total),0) FROM finanzas f WHERE f.agente_id = u.id AND f.estado='cobrado' AND f.fecha BETWEEN '$desde' AND '$hasta') as ingresos
-    FROM usuarios u WHERE u.activo = 1 ORDER BY ingresos DESC")->fetchAll();
+$stmtRanking = $db->prepare("SELECT u.nombre, u.apellidos,
+    (SELECT COUNT(*) FROM clientes c WHERE c.agente_id = u.id AND c.created_at BETWEEN ? AND ?) as clientes,
+    (SELECT COUNT(*) FROM visitas v WHERE v.agente_id = u.id AND v.fecha BETWEEN ? AND ?) as visitas,
+    (SELECT COALESCE(SUM(f.importe_total),0) FROM finanzas f WHERE f.agente_id = u.id AND f.estado='cobrado' AND f.fecha BETWEEN ? AND ?) as ingresos
+    FROM usuarios u
+    WHERE u.activo = 1
+    ORDER BY ingresos DESC");
+$stmtRanking->execute([$desde, $hasta, $desde, $hasta, $desde, $hasta]);
+$ranking = $stmtRanking->fetchAll();
 
 function cambio($actual, $prev) {
     if ($prev == 0) return $actual > 0 ? 100 : 0;

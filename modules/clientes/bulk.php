@@ -25,6 +25,18 @@ if (empty($ids)) {
 
 $placeholders = implode(',', array_fill(0, count($ids), '?'));
 
+if (!isAdmin()) {
+    $stmtPermitidos = $db->prepare("SELECT id FROM clientes WHERE agente_id = ? AND id IN ($placeholders)");
+    $stmtPermitidos->execute(array_merge([currentUserId()], $ids));
+    $ids = array_map('intval', $stmtPermitidos->fetchAll(PDO::FETCH_COLUMN));
+    if (empty($ids)) {
+        setFlash('danger', 'No tienes permisos sobre los clientes seleccionados.');
+        header('Location: index.php');
+        exit;
+    }
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+}
+
 switch ($accion) {
     case 'eliminar':
         $stmt = $db->prepare("DELETE FROM clientes WHERE id IN ($placeholders)");

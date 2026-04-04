@@ -35,6 +35,7 @@ $scripts = [
     'install_automatizaciones.php',
     'install_workflows.php',
     'install_booking.php',
+    'install_marketing_utm.php',
 ];
 
 $results = [];

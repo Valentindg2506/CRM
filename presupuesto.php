@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/config/database.php';
+if (session_status() === PHP_SESSION_NONE) session_start();
 $db = getDB();
 
 $token = trim($_GET['token'] ?? '');
@@ -12,8 +13,19 @@ if (!$p) { http_response_code(404); echo '<h1>Presupuesto no encontrado</h1>'; e
 $config = $db->query("SELECT * FROM configuracion_pagos LIMIT 1")->fetch();
 $lineas = json_decode($p['lineas'], true) ?: [];
 
+if (empty($_SESSION['public_csrf_token'])) {
+    $_SESSION['public_csrf_token'] = bin2hex(random_bytes(32));
+}
+$publicCsrfToken = $_SESSION['public_csrf_token'];
+
 // Accept/reject
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['decision']??'', ['aceptar','rechazar'])) {
+    $csrf = $_POST['public_csrf_token'] ?? '';
+    if (!hash_equals($publicCsrfToken, $csrf)) {
+        http_response_code(403);
+        echo '<h1>Solicitud invalida</h1>';
+        exit;
+    }
     $nuevoEstado = $_POST['decision'] === 'aceptar' ? 'aceptado' : 'rechazado';
     if (in_array($p['estado'], ['enviado','borrador'])) {
         $db->prepare("UPDATE presupuestos SET estado=?, aceptado_at=NOW(), aceptado_ip=? WHERE id=?")
@@ -38,7 +50,7 @@ $estadoClases = ['borrador'=>'secondary','enviado'=>'primary','aceptado'=>'succe
         <div class="card-body p-4 p-md-5">
             <div class="row mb-4">
                 <div class="col-6">
-                    <h4 class="fw-bold mb-1"><?= htmlspecialchars($config['empresa_nombre']??'InmoCRM') ?></h4>
+                    <h4 class="fw-bold mb-1"><?= htmlspecialchars($config['empresa_nombre']??'Tinoprop') ?></h4>
                     <?php if($config['empresa_cif']??''): ?><p class="mb-0 small"><?= htmlspecialchars($config['empresa_cif']) ?></p><?php endif; ?>
                     <?php if($config['empresa_direccion']??''): ?><p class="mb-0 small text-muted"><?= nl2br(htmlspecialchars($config['empresa_direccion'])) ?></p><?php endif; ?>
                 </div>
@@ -85,8 +97,16 @@ $estadoClases = ['borrador'=>'secondary','enviado'=>'primary','aceptado'=>'succe
 
             <?php if (in_array($p['estado'], ['enviado','borrador'])): ?>
             <div class="mt-4 text-center no-print">
-                <form method="POST" class="d-inline"><input type="hidden" name="decision" value="aceptar"><button class="btn btn-success btn-lg me-2"><i class="bi bi-check-lg"></i> Aceptar Presupuesto</button></form>
-                <form method="POST" class="d-inline"><input type="hidden" name="decision" value="rechazar"><button class="btn btn-outline-danger btn-lg"><i class="bi bi-x-lg"></i> Rechazar</button></form>
+                <form method="POST" class="d-inline">
+                    <input type="hidden" name="public_csrf_token" value="<?= htmlspecialchars($publicCsrfToken) ?>">
+                    <input type="hidden" name="decision" value="aceptar">
+                    <button class="btn btn-success btn-lg me-2"><i class="bi bi-check-lg"></i> Aceptar Presupuesto</button>
+                </form>
+                <form method="POST" class="d-inline">
+                    <input type="hidden" name="public_csrf_token" value="<?= htmlspecialchars($publicCsrfToken) ?>">
+                    <input type="hidden" name="decision" value="rechazar">
+                    <button class="btn btn-outline-danger btn-lg"><i class="bi bi-x-lg"></i> Rechazar</button>
+                </form>
             </div>
             <?php elseif ($p['estado'] === 'aceptado'): ?>
             <div class="alert alert-success text-center mt-4"><i class="bi bi-check-circle"></i> Presupuesto aceptado<?= $p['aceptado_at']?' el '.date('d/m/Y H:i',strtotime($p['aceptado_at'])):'' ?></div>

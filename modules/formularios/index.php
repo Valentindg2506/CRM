@@ -10,12 +10,23 @@ $db = getDB();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
     $accion = post('accion');
+    $id = intval(post('id'));
+
+    if (($accion === 'toggle' || $accion === 'eliminar') && $id > 0 && !isAdmin()) {
+        $ownerStmt = $db->prepare("SELECT usuario_id FROM formularios WHERE id = ? LIMIT 1");
+        $ownerStmt->execute([$id]);
+        $ownerId = intval($ownerStmt->fetchColumn());
+        if ($ownerId !== intval(currentUserId())) {
+            setFlash('danger', 'No tienes permisos sobre este formulario.');
+            header('Location: index.php');
+            exit;
+        }
+    }
+
     if ($accion === 'toggle') {
-        $id = intval(post('id'));
         $db->prepare("UPDATE formularios SET activo = NOT activo WHERE id = ?")->execute([$id]);
     }
     if ($accion === 'eliminar') {
-        $id = intval(post('id'));
         $db->prepare("DELETE FROM formularios WHERE id = ?")->execute([$id]);
         setFlash('success', 'Formulario eliminado.');
     }
@@ -26,7 +37,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $pageTitle = 'Formularios Web';
 require_once __DIR__ . '/../../includes/header.php';
 
-$forms = $db->query("SELECT f.*, (SELECT COUNT(*) FROM formulario_envios WHERE formulario_id = f.id) as total_envios, (SELECT COUNT(*) FROM formulario_envios WHERE formulario_id = f.id AND leido = 0) as no_leidos FROM formularios f ORDER BY f.created_at DESC")->fetchAll();
+$formsSql = "SELECT f.*, (SELECT COUNT(*) FROM formulario_envios WHERE formulario_id = f.id) as total_envios, (SELECT COUNT(*) FROM formulario_envios WHERE formulario_id = f.id AND leido = 0) as no_leidos FROM formularios f" . (isAdmin() ? '' : ' WHERE f.usuario_id = ?') . " ORDER BY f.created_at DESC";
+$formsStmt = $db->prepare($formsSql);
+$formsStmt->execute(isAdmin() ? [] : [currentUserId()]);
+$forms = $formsStmt->fetchAll();
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">

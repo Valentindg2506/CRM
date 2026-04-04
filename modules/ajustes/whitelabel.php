@@ -11,7 +11,7 @@ $db = getDB();
 try {
     $db->exec("CREATE TABLE IF NOT EXISTS whitelabel_config (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        app_nombre VARCHAR(200) DEFAULT 'InmoCRM',
+        app_nombre VARCHAR(200) DEFAULT 'Tinoprop',
         app_logo_url VARCHAR(500) DEFAULT '',
         app_favicon_url VARCHAR(500) DEFAULT '',
         color_primario VARCHAR(7) DEFAULT '#10b981',
@@ -28,7 +28,9 @@ try {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     $db->exec("INSERT IGNORE INTO whitelabel_config (id) VALUES (1)");
-} catch (Exception $e) {}
+} catch (Exception $e) {
+    error_log($e->getMessage());
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
@@ -116,7 +118,7 @@ $wl = $db->query("SELECT * FROM whitelabel_config WHERE id=1")->fetch();
                 <div class="card-body">
                     <div class="form-check mb-3">
                         <input type="checkbox" name="ocultar_powered_by" value="1" class="form-check-input" <?= $wl['ocultar_powered_by']?'checked':'' ?>>
-                        <label class="form-check-label">Ocultar "Powered by InmoCRM"</label>
+                        <label class="form-check-label">Ocultar "Powered by Tinoprop"</label>
                     </div>
                     <button class="btn btn-primary w-100"><i class="bi bi-save"></i> Guardar Configuracion</button>
                 </div>

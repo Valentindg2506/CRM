@@ -19,7 +19,7 @@ function generarBackup() {
     $filename = 'backup_' . DB_NAME . '_' . date('Y-m-d_His') . '.sql';
     $filepath = $backupDir . $filename;
 
-    $output = "-- InmoCRM Backup\n";
+    $output = "-- Tinoprop Backup\n";
     $output .= "-- Fecha: " . date('Y-m-d H:i:s') . "\n";
     $output .= "-- Base de datos: " . DB_NAME . "\n";
     $output .= "-- Version: " . APP_VERSION . "\n";

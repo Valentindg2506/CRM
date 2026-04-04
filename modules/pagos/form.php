@@ -15,6 +15,11 @@ if ($id) {
     $stmt->execute([$id]);
     $factura = $stmt->fetch();
     if (!$factura) { setFlash('danger', 'Factura no encontrada.'); header('Location: index.php'); exit; }
+    if (!isAdmin() && intval($factura['usuario_id']) !== intval(currentUserId())) {
+        setFlash('danger', 'No tienes permisos para editar esta factura.');
+        header('Location: index.php');
+        exit;
+    }
     $lineas = json_decode($factura['lineas'], true) ?: [];
 }
 
@@ -46,8 +51,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     elseif (empty($lineasArr)) { setFlash('danger', 'Agrega al menos una linea.'); }
     else {
         if ($id) {
-            $stmt = $db->prepare("UPDATE facturas SET cliente_id=?, propiedad_id=?, concepto=?, lineas=?, subtotal=?, iva_total=?, total=?, fecha_emision=?, fecha_vencimiento=?, notas=?, metodo_pago=? WHERE id=?");
-            $stmt->execute([$cliente_id, $propiedad_id, $concepto, json_encode($lineasArr), $subtotal, $ivaTotal, $total, $fecha_emision, $fecha_vencimiento, $notas, $metodo_pago, $id]);
+            if (isAdmin()) {
+                $stmt = $db->prepare("UPDATE facturas SET cliente_id=?, propiedad_id=?, concepto=?, lineas=?, subtotal=?, iva_total=?, total=?, fecha_emision=?, fecha_vencimiento=?, notas=?, metodo_pago=? WHERE id=?");
+                $stmt->execute([$cliente_id, $propiedad_id, $concepto, json_encode($lineasArr), $subtotal, $ivaTotal, $total, $fecha_emision, $fecha_vencimiento, $notas, $metodo_pago, $id]);
+            } else {
+                $stmt = $db->prepare("UPDATE facturas SET cliente_id=?, propiedad_id=?, concepto=?, lineas=?, subtotal=?, iva_total=?, total=?, fecha_emision=?, fecha_vencimiento=?, notas=?, metodo_pago=? WHERE id=? AND usuario_id=?");
+                $stmt->execute([$cliente_id, $propiedad_id, $concepto, json_encode($lineasArr), $subtotal, $ivaTotal, $total, $fecha_emision, $fecha_vencimiento, $notas, $metodo_pago, $id, currentUserId()]);
+            }
         } else {
             $config = $db->query("SELECT prefijo_factura, siguiente_numero FROM configuracion_pagos LIMIT 1")->fetch();
             $numero = ($config['prefijo_factura'] ?? 'FAC-') . str_pad($config['siguiente_numero'] ?? 1, 5, '0', STR_PAD_LEFT);
@@ -68,8 +78,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $pageTitle = $id ? 'Editar Factura' : 'Nueva Factura';
 require_once __DIR__ . '/../../includes/header.php';
 
-$clientes = $db->query("SELECT id, nombre, apellidos FROM clientes WHERE activo = 1 ORDER BY nombre")->fetchAll();
-$propiedades = $db->query("SELECT id, referencia, titulo FROM propiedades ORDER BY referencia")->fetchAll();
+$stmtClientes = $db->prepare("SELECT id, nombre, apellidos FROM clientes WHERE activo = 1" . (isAdmin() ? '' : ' AND agente_id = ?') . " ORDER BY nombre");
+$stmtClientes->execute(isAdmin() ? [] : [currentUserId()]);
+$clientes = $stmtClientes->fetchAll();
+
+$stmtPropiedades = $db->prepare("SELECT id, referencia, titulo FROM propiedades" . (isAdmin() ? '' : ' WHERE agente_id = ?') . " ORDER BY referencia");
+$stmtPropiedades->execute(isAdmin() ? [] : [currentUserId()]);
+$propiedades = $stmtPropiedades->fetchAll();
 $config = $db->query("SELECT * FROM configuracion_pagos LIMIT 1")->fetch();
 $ivaDefecto = $config['iva_defecto'] ?? 21;
 ?>

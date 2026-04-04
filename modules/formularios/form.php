@@ -15,6 +15,11 @@ if ($id) {
     $stmt->execute([$id]);
     $form = $stmt->fetch();
     if (!$form) { setFlash('danger', 'Formulario no encontrado.'); header('Location: index.php'); exit; }
+    if (!isAdmin() && intval($form['usuario_id']) !== intval(currentUserId())) {
+        setFlash('danger', 'No tienes permisos para editar este formulario.');
+        header('Location: index.php');
+        exit;
+    }
     $campos = json_decode($form['campos'], true) ?: [];
 }
 
@@ -38,8 +43,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         setFlash('danger', 'Debes agregar al menos un campo.');
     } else {
         if ($id) {
-            $stmt = $db->prepare("UPDATE formularios SET nombre=?, descripcion=?, campos=?, color_primario=?, texto_boton=?, mensaje_exito=?, redirect_url=?, email_notificacion=?, crear_cliente=? WHERE id=?");
-            $stmt->execute([$nombre, $descripcion, json_encode($camposArr), $color, $texto_boton, $mensaje_exito, $redirect_url, $email_notif, $crear_cliente, $id]);
+            if (isAdmin()) {
+                $stmt = $db->prepare("UPDATE formularios SET nombre=?, descripcion=?, campos=?, color_primario=?, texto_boton=?, mensaje_exito=?, redirect_url=?, email_notificacion=?, crear_cliente=? WHERE id=?");
+                $stmt->execute([$nombre, $descripcion, json_encode($camposArr), $color, $texto_boton, $mensaje_exito, $redirect_url, $email_notif, $crear_cliente, $id]);
+            } else {
+                $stmt = $db->prepare("UPDATE formularios SET nombre=?, descripcion=?, campos=?, color_primario=?, texto_boton=?, mensaje_exito=?, redirect_url=?, email_notificacion=?, crear_cliente=? WHERE id=? AND usuario_id=?");
+                $stmt->execute([$nombre, $descripcion, json_encode($camposArr), $color, $texto_boton, $mensaje_exito, $redirect_url, $email_notif, $crear_cliente, $id, currentUserId()]);
+            }
             registrarActividad('actualizar', 'formulario', $id, $nombre);
         } else {
             $stmt = $db->prepare("INSERT INTO formularios (nombre, descripcion, campos, color_primario, texto_boton, mensaje_exito, redirect_url, email_notificacion, crear_cliente, usuario_id) VALUES (?,?,?,?,?,?,?,?,?,?)");

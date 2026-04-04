@@ -132,7 +132,7 @@ $desc = htmlspecialchars($page['meta_descripcion'] ?? '');
 endforeach; ?>
 
 <footer style="text-align:center;padding:2rem;color:#94a3b8;font-size:0.85rem">
-    Powered by InmoCRM
+    Powered by Tinoprop
 </footer>
 
 </body>

@@ -9,12 +9,25 @@ $db = getDB();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
     $accion = post('accion');
+    $pageId = intval(post('page_id'));
+
+    if (($accion === 'eliminar' || $accion === 'toggle') && $pageId > 0 && !isAdmin()) {
+        $ownerStmt = $db->prepare("SELECT usuario_id FROM landing_pages WHERE id = ? LIMIT 1");
+        $ownerStmt->execute([$pageId]);
+        $ownerId = intval($ownerStmt->fetchColumn());
+        if ($ownerId !== intval(currentUserId())) {
+            setFlash('danger', 'No tienes permisos sobre esta landing page.');
+            header('Location: index.php');
+            exit;
+        }
+    }
+
     if ($accion === 'eliminar') {
-        $db->prepare("DELETE FROM landing_pages WHERE id = ?")->execute([intval(post('page_id'))]);
+        $db->prepare("DELETE FROM landing_pages WHERE id = ?")->execute([$pageId]);
         setFlash('success', 'Pagina eliminada.');
     }
     if ($accion === 'toggle') {
-        $db->prepare("UPDATE landing_pages SET activa = NOT activa WHERE id = ?")->execute([intval(post('page_id'))]);
+        $db->prepare("UPDATE landing_pages SET activa = NOT activa WHERE id = ?")->execute([$pageId]);
     }
     header('Location: index.php');
     exit;

@@ -20,6 +20,16 @@ if (!isLoggedIn()) {
 $db = getDB();
 $accion = $_POST['accion'] ?? $_GET['accion'] ?? '';
 
+function usuarioPuedeAccederProspecto($db, $prospectoId) {
+    if (!$prospectoId) return false;
+    if (isAdmin()) return true;
+    $stmt = $db->prepare("SELECT agente_id FROM prospectos WHERE id = ? LIMIT 1");
+    $stmt->execute([$prospectoId]);
+    $row = $stmt->fetch();
+    if (!$row) return false;
+    return intval($row['agente_id']) === intval(currentUserId());
+}
+
 // Verify CSRF for POST requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrfToken = $_POST['csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
@@ -43,6 +53,10 @@ switch ($accion) {
             echo json_encode(['success' => false, 'error' => 'Parámetros inválidos']);
             exit;
         }
+        if (!usuarioPuedeAccederProspecto($db, $id)) {
+            echo json_encode(['success' => false, 'error' => 'Sin permisos sobre el prospecto']);
+            exit;
+        }
 
         // Campos permitidos para edición inline
         $camposPermitidos = [
@@ -62,6 +76,10 @@ switch ($accion) {
             echo json_encode(['success' => false, 'error' => 'Campo no permitido: ' . $campo]);
             exit;
         }
+        if ($campo === 'agente_id' && !isAdmin()) {
+            echo json_encode(['success' => false, 'error' => 'Solo un administrador puede reasignar el agente']);
+            exit;
+        }
 
         // Sanitizar y convertir según tipo
         $camposNumericos = ['precio_estimado', 'precio_propietario', 'precio_comunidad', 'superficie', 'superficie_construida', 'superficie_util', 'superficie_parcela', 'habitaciones', 'banos', 'aseos', 'antiguedad', 'comision'];
@@ -71,6 +89,8 @@ switch ($accion) {
             $valor = $valor !== '' ? floatval(str_replace(',', '.', $valor)) : null;
         } elseif (in_array($campo, $camposBoolean)) {
             $valor = intval($valor) ? 1 : 0;
+        } elseif ($campo === 'agente_id') {
+            $valor = intval($valor);
         } elseif ($valor === '') {
             $valor = null;
         }
@@ -108,6 +128,10 @@ switch ($accion) {
 
         if (!$prospectoId || !$contenido) {
             echo json_encode(['success' => false, 'error' => 'Prospecto y contenido son obligatorios']);
+            exit;
+        }
+        if (!usuarioPuedeAccederProspecto($db, $prospectoId)) {
+            echo json_encode(['success' => false, 'error' => 'Sin permisos sobre el prospecto']);
             exit;
         }
 
@@ -151,6 +175,10 @@ switch ($accion) {
         $page = max(1, intval($_GET['page'] ?? 1));
         $perPage = 20;
         $offset = ($page - 1) * $perPage;
+        if (!usuarioPuedeAccederProspecto($db, $prospectoId)) {
+            echo json_encode(['success' => false, 'error' => 'Sin permisos sobre el prospecto']);
+            exit;
+        }
 
         $stmt = $db->prepare("SELECT h.*, u.nombre as usuario_nombre, u.apellidos as usuario_apellidos 
                               FROM historial_prospectos h 
@@ -224,6 +252,10 @@ switch ($accion) {
             echo json_encode(['success' => false, 'error' => 'Parámetros inválidos']);
             exit;
         }
+        if (!usuarioPuedeAccederProspecto($db, $prospectoId)) {
+            echo json_encode(['success' => false, 'error' => 'Sin permisos sobre el prospecto']);
+            exit;
+        }
 
         try {
             $db->prepare("UPDATE prospectos SET fecha_proximo_contacto = ? WHERE id = ?")
@@ -245,6 +277,10 @@ switch ($accion) {
 
         if (!$prospectoId || !$fieldId) {
             echo json_encode(['success' => false, 'error' => 'Parámetros inválidos']);
+            exit;
+        }
+        if (!usuarioPuedeAccederProspecto($db, $prospectoId)) {
+            echo json_encode(['success' => false, 'error' => 'Sin permisos sobre el prospecto']);
             exit;
         }
 

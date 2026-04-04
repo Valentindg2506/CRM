@@ -9,6 +9,7 @@ $db = getDB();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
     $accion = post('accion');
+    $cid = intval(post('cid'));
     if ($accion === 'crear') {
         $nombre = trim(post('nombre'));
         if ($nombre) {
@@ -17,11 +18,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: editor.php?id='.$db->lastInsertId()); exit;
         }
     }
-    if ($accion === 'eliminar') { $db->prepare("DELETE FROM campanas WHERE id=?")->execute([intval(post('cid'))]); setFlash('success','Eliminada.'); }
+    if (($accion === 'eliminar' || $accion === 'toggle') && $cid > 0 && !isAdmin()) {
+        $ownerStmt = $db->prepare("SELECT usuario_id FROM campanas WHERE id = ? LIMIT 1");
+        $ownerStmt->execute([$cid]);
+        $ownerId = intval($ownerStmt->fetchColumn());
+        if ($ownerId !== intval(currentUserId())) {
+            setFlash('danger', 'No tienes permisos sobre esta campana.');
+            header('Location: index.php');
+            exit;
+        }
+    }
+
+    if ($accion === 'eliminar') { $db->prepare("DELETE FROM campanas WHERE id=?")->execute([$cid]); setFlash('success','Eliminada.'); }
     if ($accion === 'toggle') {
-        $c = $db->prepare("SELECT estado FROM campanas WHERE id=?"); $c->execute([intval(post('cid'))]); $c=$c->fetch();
+        $c = $db->prepare("SELECT estado FROM campanas WHERE id=?"); $c->execute([$cid]); $c=$c->fetch();
         $nuevo = $c['estado']==='activa' ? 'pausada' : 'activa';
-        $db->prepare("UPDATE campanas SET estado=? WHERE id=?")->execute([$nuevo, intval(post('cid'))]);
+        $db->prepare("UPDATE campanas SET estado=? WHERE id=?")->execute([$nuevo, $cid]);
     }
     header('Location: index.php'); exit;
 }

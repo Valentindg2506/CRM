@@ -112,9 +112,17 @@ $baseUrl = 'index.php?estado=' . urlencode($filtroEstado) . '&prioridad=' . urle
                     <div class="btn-group btn-group-sm">
                         <a href="form.php?id=<?= $t['id'] ?>" class="btn btn-outline-secondary"><i class="bi bi-pencil"></i></a>
                         <?php if ($t['estado'] !== 'completada'): ?>
-                        <a href="complete.php?id=<?= $t['id'] ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-success" title="Completar"><i class="bi bi-check-lg"></i></a>
+                        <form method="POST" action="complete.php" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                            <input type="hidden" name="id" value="<?= intval($t['id']) ?>">
+                            <button type="submit" class="btn btn-outline-success" title="Completar"><i class="bi bi-check-lg"></i></button>
+                        </form>
                         <?php endif; ?>
-                        <a href="delete.php?id=<?= $t['id'] ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-danger" data-confirm="Eliminar esta tarea?"><i class="bi bi-trash"></i></a>
+                        <form method="POST" action="delete.php" onsubmit="return confirm('Eliminar esta tarea?')" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                            <input type="hidden" name="id" value="<?= intval($t['id']) ?>">
+                            <button type="submit" class="btn btn-outline-danger" title="Eliminar"><i class="bi bi-trash"></i></button>
+                        </form>
                     </div>
                 </td>
             </tr>
