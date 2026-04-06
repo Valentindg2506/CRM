@@ -77,6 +77,44 @@ $estados = [
 ];
 ?>
 
+<style>
+@media (max-width: 767.98px) {
+    .prospectos-head {
+        align-items: stretch !important;
+        gap: 10px;
+    }
+
+    .prospectos-head-count {
+        font-size: 0.95rem;
+    }
+
+    .prospectos-head-actions {
+        width: 100%;
+        display: grid !important;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .prospectos-head-actions .btn {
+        width: 100%;
+        padding: 0.5rem 0.4rem;
+        font-size: 0.82rem;
+        white-space: normal;
+        line-height: 1.2;
+    }
+
+    .prospectos-head-actions .btn i {
+        margin-right: 4px;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .prospectos-head-actions {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+
 <!-- Stats rápidas por etapa -->
 <div class="row g-3 mb-4">
     <?php
@@ -95,9 +133,9 @@ $estados = [
     <?php endforeach; ?>
 </div>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <span class="text-muted"><?= $total ?> prospectos encontrados</span>
-    <div class="d-flex gap-2">
+<div class="d-flex justify-content-between align-items-center flex-column flex-md-row mb-4 prospectos-head">
+    <span class="text-muted prospectos-head-count"><?= $total ?> prospectos encontrados</span>
+    <div class="d-flex gap-2 flex-wrap justify-content-end prospectos-head-actions">
         <a href="import.php" class="btn btn-outline-info"><i class="bi bi-upload"></i> Importar CSV</a>
         <a href="index.php?accion=exportar" class="btn btn-outline-success"><i class="bi bi-file-earmark-spreadsheet"></i> Exportar CSV</a>
         <a href="form.php" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo Prospecto</a>

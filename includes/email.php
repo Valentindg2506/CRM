@@ -4,17 +4,118 @@
  * Soporta mail() nativo de PHP y SMTP basico
  */
 
+if (!isset($GLOBALS['LAST_EMAIL_ERROR'])) {
+    $GLOBALS['LAST_EMAIL_ERROR'] = null;
+}
+
+function setLastEmailError($message) {
+    $GLOBALS['LAST_EMAIL_ERROR'] = (string)$message;
+}
+
+function getLastEmailError() {
+    return $GLOBALS['LAST_EMAIL_ERROR'] ?? null;
+}
+
+/**
+ * Construye configuracion efectiva de transporte de email.
+ */
+function getEmailTransportConfig($userId = null) {
+    static $cache = [];
+
+    $cacheKey = $userId !== null ? ('u' . intval($userId)) : 'default';
+    if (isset($cache[$cacheKey])) {
+        return $cache[$cacheKey];
+    }
+
+    $cfg = [
+        'method' => MAIL_METHOD,
+        'host' => SMTP_HOST,
+        'port' => intval(SMTP_PORT),
+        'user' => SMTP_USER,
+        'pass' => SMTP_PASS,
+        'from' => SMTP_FROM,
+        'from_name' => SMTP_FROM_NAME,
+    ];
+
+    try {
+        $db = getDB();
+        $stmt = null;
+
+        if ($userId !== null) {
+            $stmt = $db->prepare("SELECT * FROM email_cuentas WHERE usuario_id = ? AND activo = 1 LIMIT 1");
+            $stmt->execute([intval($userId)]);
+        } else {
+            $stmt = $db->query("SELECT * FROM email_cuentas WHERE activo = 1 ORDER BY id ASC LIMIT 1");
+        }
+
+        $cuenta = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+        if ($cuenta) {
+            $cfg['from'] = !empty($cuenta['email']) ? $cuenta['email'] : $cfg['from'];
+            $cfg['from_name'] = !empty($cuenta['nombre_display']) ? $cuenta['nombre_display'] : $cfg['from_name'];
+
+            if (!empty($cuenta['smtp_host'])) {
+                $cfg['method'] = 'smtp';
+                $cfg['host'] = $cuenta['smtp_host'];
+                $cfg['port'] = !empty($cuenta['smtp_port']) ? intval($cuenta['smtp_port']) : 587;
+                $cfg['user'] = $cuenta['smtp_user'] ?? '';
+                $cfg['pass'] = $cuenta['smtp_pass'] ?? '';
+            }
+        }
+    } catch (Exception $e) {
+        // Puede no existir la tabla de email en instalaciones minimas.
+    }
+
+    $cache[$cacheKey] = $cfg;
+    return $cfg;
+}
+
+/**
+ * Verifica preferencia de notificaciones email para un usuario.
+ */
+function userWantsEmailNotification($userId, $settingKey, $default = true) {
+    if (empty($userId)) {
+        return $default;
+    }
+
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT valor FROM usuario_ajustes WHERE usuario_id = ? AND clave = ? LIMIT 1");
+        $stmt->execute([intval($userId), $settingKey]);
+        $value = $stmt->fetchColumn();
+        if ($value === false) {
+            return $default;
+        }
+        return (string)$value === '1';
+    } catch (Exception $e) {
+        return $default;
+    }
+}
+
 /**
  * Enviar email usando el metodo configurado
  */
 function enviarEmail($destinatario, $asunto, $cuerpo, $esHTML = true) {
     try {
-        if (MAIL_METHOD === 'smtp' && !empty(SMTP_HOST)) {
-            return enviarEmailSMTP($destinatario, $asunto, $cuerpo, $esHTML);
+        setLastEmailError('');
+
+        $senderUserId = null;
+        if (function_exists('currentUserId')) {
+            try {
+                $senderUserId = currentUserId();
+            } catch (Exception $e) {
+                $senderUserId = null;
+            }
+        }
+
+        $cfg = getEmailTransportConfig($senderUserId);
+
+        if ($cfg['method'] === 'smtp' && !empty($cfg['host'])) {
+            return enviarEmailSMTP($destinatario, $asunto, $cuerpo, $esHTML, $cfg);
         } else {
-            return enviarEmailMail($destinatario, $asunto, $cuerpo, $esHTML);
+            return enviarEmailMail($destinatario, $asunto, $cuerpo, $esHTML, $cfg);
         }
     } catch (Exception $e) {
+        setLastEmailError($e->getMessage());
         logError('Email send error: ' . $e->getMessage(), [
             'to' => $destinatario,
             'subject' => $asunto
@@ -26,12 +127,14 @@ function enviarEmail($destinatario, $asunto, $cuerpo, $esHTML = true) {
 /**
  * Enviar usando mail() nativo de PHP
  */
-function enviarEmailMail($destinatario, $asunto, $cuerpo, $esHTML = true) {
+function enviarEmailMail($destinatario, $asunto, $cuerpo, $esHTML = true, $cfg = null) {
+    $cfg = is_array($cfg) ? $cfg : getEmailTransportConfig();
+
     $headers = [];
     $headers[] = 'MIME-Version: 1.0';
     $headers[] = $esHTML ? 'Content-type: text/html; charset=UTF-8' : 'Content-type: text/plain; charset=UTF-8';
-    $headers[] = 'From: ' . SMTP_FROM_NAME . ' <' . SMTP_FROM . '>';
-    $headers[] = 'Reply-To: ' . SMTP_FROM;
+    $headers[] = 'From: ' . $cfg['from_name'] . ' <' . $cfg['from'] . '>';
+    $headers[] = 'Reply-To: ' . $cfg['from'];
     $headers[] = 'X-Mailer: Tinoprop';
 
     if ($esHTML) {
@@ -42,6 +145,15 @@ function enviarEmailMail($destinatario, $asunto, $cuerpo, $esHTML = true) {
 
     if ($result) {
         logError('Email sent successfully', ['to' => $destinatario, 'subject' => $asunto]);
+    } else {
+        $error = 'mail() devolvio false. Verifica SMTP en modulo Email o servidor MTA local.';
+        setLastEmailError($error);
+        logError('Email send error: ' . $error, [
+            'to' => $destinatario,
+            'subject' => $asunto,
+            'from' => $cfg['from'] ?? null,
+            'method' => 'mail'
+        ]);
     }
 
     return $result;
@@ -50,10 +162,12 @@ function enviarEmailMail($destinatario, $asunto, $cuerpo, $esHTML = true) {
 /**
  * Enviar usando SMTP directo (sockets) - sin dependencias externas
  */
-function enviarEmailSMTP($destinatario, $asunto, $cuerpo, $esHTML = true) {
+function enviarEmailSMTP($destinatario, $asunto, $cuerpo, $esHTML = true, $cfg = null) {
+    $cfg = is_array($cfg) ? $cfg : getEmailTransportConfig();
+
     $socket = @fsockopen(
-        (SMTP_PORT == 465 ? 'ssl://' : '') . SMTP_HOST,
-        SMTP_PORT,
+        ($cfg['port'] == 465 ? 'ssl://' : '') . $cfg['host'],
+        $cfg['port'],
         $errno, $errstr, 30
     );
 
@@ -61,30 +175,33 @@ function enviarEmailSMTP($destinatario, $asunto, $cuerpo, $esHTML = true) {
         throw new Exception("No se pudo conectar al servidor SMTP: $errstr ($errno)");
     }
 
-    // Leer saludo
-    smtpRead($socket);
+    // Leer saludo inicial del servidor
+    $greeting = smtpRead($socket);
+    smtpAssertResponse($greeting, [220], 'saludo inicial');
 
     // EHLO
-    smtpCommand($socket, "EHLO " . ($_SERVER['SERVER_NAME'] ?? 'localhost'));
+    smtpCommand($socket, "EHLO " . ($_SERVER['SERVER_NAME'] ?? 'localhost'), [250]);
 
     // STARTTLS para puerto 587
-    if (SMTP_PORT == 587) {
-        smtpCommand($socket, "STARTTLS");
-        stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
-        smtpCommand($socket, "EHLO " . ($_SERVER['SERVER_NAME'] ?? 'localhost'));
+    if ($cfg['port'] == 587) {
+        smtpCommand($socket, "STARTTLS", [220]);
+        if (!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+            throw new Exception('No se pudo establecer canal TLS con el servidor SMTP');
+        }
+        smtpCommand($socket, "EHLO " . ($_SERVER['SERVER_NAME'] ?? 'localhost'), [250]);
     }
 
     // Autenticacion
-    if (!empty(SMTP_USER)) {
-        smtpCommand($socket, "AUTH LOGIN");
-        smtpCommand($socket, base64_encode(SMTP_USER));
-        smtpCommand($socket, base64_encode(SMTP_PASS));
+    if (!empty($cfg['user'])) {
+        smtpCommand($socket, "AUTH LOGIN", [334]);
+        smtpCommand($socket, base64_encode($cfg['user']), [334], true);
+        smtpCommand($socket, base64_encode($cfg['pass']), [235], true);
     }
 
     // Enviar
-    smtpCommand($socket, "MAIL FROM:<" . SMTP_FROM . ">");
-    smtpCommand($socket, "RCPT TO:<$destinatario>");
-    smtpCommand($socket, "DATA");
+    smtpCommand($socket, "MAIL FROM:<" . $cfg['from'] . ">", [250]);
+    smtpCommand($socket, "RCPT TO:<$destinatario>", [250, 251]);
+    smtpCommand($socket, "DATA", [354]);
 
     // Headers del mensaje
     $contentType = $esHTML ? 'text/html' : 'text/plain';
@@ -92,7 +209,7 @@ function enviarEmailSMTP($destinatario, $asunto, $cuerpo, $esHTML = true) {
         $cuerpo = plantillaEmail($cuerpo);
     }
 
-    $mensaje = "From: " . SMTP_FROM_NAME . " <" . SMTP_FROM . ">\r\n";
+    $mensaje = "From: " . $cfg['from_name'] . " <" . $cfg['from'] . ">\r\n";
     $mensaje .= "To: $destinatario\r\n";
     $mensaje .= "Subject: =?UTF-8?B?" . base64_encode($asunto) . "?=\r\n";
     $mensaje .= "MIME-Version: 1.0\r\n";
@@ -102,16 +219,18 @@ function enviarEmailSMTP($destinatario, $asunto, $cuerpo, $esHTML = true) {
     $mensaje .= chunk_split(base64_encode($cuerpo));
     $mensaje .= "\r\n.";
 
-    smtpCommand($socket, $mensaje);
-    smtpCommand($socket, "QUIT");
+    smtpCommand($socket, $mensaje, [250]);
+    smtpCommand($socket, "QUIT", [221]);
 
     fclose($socket);
     return true;
 }
 
-function smtpCommand($socket, $command) {
+function smtpCommand($socket, $command, $expectedCodes = [250], $sensitive = false) {
     fwrite($socket, $command . "\r\n");
-    return smtpRead($socket);
+    $response = smtpRead($socket);
+    smtpAssertResponse($response, $expectedCodes, $sensitive ? '[comando sensible]' : $command);
+    return $response;
 }
 
 function smtpRead($socket) {
@@ -121,6 +240,19 @@ function smtpRead($socket) {
         if (substr($line, 3, 1) == ' ') break;
     }
     return $response;
+}
+
+function smtpAssertResponse($response, $expectedCodes, $context = '') {
+    $response = (string)$response;
+    $code = intval(substr($response, 0, 3));
+
+    if (empty($expectedCodes) || in_array($code, $expectedCodes, true)) {
+        return true;
+    }
+
+    $cleanResponse = trim(preg_replace('/\s+/', ' ', $response));
+    $ctx = $context !== '' ? (" en " . $context) : '';
+    throw new Exception("Respuesta SMTP no valida$ctx: $cleanResponse");
 }
 
 /**
@@ -151,6 +283,10 @@ function plantillaEmail($contenido) {
  * Enviar notificacion de nueva visita programada
  */
 function notificarNuevaVisita($visita, $propiedad, $cliente, $agente) {
+    if (empty($agente['id']) || !userWantsEmailNotification($agente['id'], 'notif_email_visitas', true)) {
+        return false;
+    }
+
     $asunto = "Nueva visita programada - " . $propiedad['referencia'];
     $cuerpo = "<h3>Nueva visita programada</h3>
         <p><strong>Propiedad:</strong> {$propiedad['referencia']} - " . htmlspecialchars($propiedad['titulo']) . "</p>
@@ -168,6 +304,10 @@ function notificarNuevaVisita($visita, $propiedad, $cliente, $agente) {
  * Enviar notificacion de tarea asignada
  */
 function notificarTareaAsignada($tarea, $agente) {
+    if (empty($agente['id']) || !userWantsEmailNotification($agente['id'], 'notif_email_tareas', true)) {
+        return false;
+    }
+
     $asunto = "Nueva tarea asignada: " . $tarea['titulo'];
     $prioridades = ['urgente' => '🔴 URGENTE', 'alta' => '🟠 Alta', 'media' => '🟡 Media', 'baja' => '🟢 Baja'];
     $cuerpo = "<h3>Nueva tarea asignada</h3>

@@ -1,5 +1,6 @@
 <?php
 $pageTitle = 'Redactar Email';
+require_once __DIR__ . '/../../includes/email.php';
 require_once __DIR__ . '/../../includes/header.php';
 
 $db = getDB();
@@ -37,6 +38,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($paraEmail) || empty($asunto)) {
         setFlash('danger', 'El destinatario y el asunto son obligatorios.');
     } else {
+        $destinatarios = [trim($paraEmail)];
+        if (!empty($cc)) {
+            $ccList = array_filter(array_map('trim', explode(',', $cc)));
+            $destinatarios = array_merge($destinatarios, $ccList);
+        }
+
+        $destinatarios = array_values(array_unique($destinatarios));
+
+        foreach ($destinatarios as $dest) {
+            if (!filter_var($dest, FILTER_VALIDATE_EMAIL)) {
+                setFlash('danger', 'Hay un email invalido en Para/CC: ' . sanitize($dest));
+                $destinatarios = [];
+                break;
+            }
+        }
+
+        if ($accion === 'enviar' && !empty($destinatarios)) {
+            $envioOk = true;
+            foreach ($destinatarios as $dest) {
+                if (!enviarEmail($dest, $asunto, $cuerpo, true)) {
+                    $envioOk = false;
+                    break;
+                }
+            }
+
+            if (!$envioOk) {
+                $ultimoError = function_exists('getLastEmailError') ? trim((string)getLastEmailError()) : '';
+                $mensaje = 'No se pudo enviar el email. Revisa la configuracion SMTP y los logs del sistema.';
+                if ($ultimoError !== '') {
+                    $mensaje .= ' Detalle: ' . mb_strimwidth($ultimoError, 0, 220, '...');
+                }
+                setFlash('danger', $mensaje);
+                goto render_form;
+            }
+        }
+
         $carpeta = ($accion === 'borrador') ? 'draft' : 'sent';
         $direccion = 'saliente';
 
@@ -67,13 +104,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             setFlash('success', 'Borrador guardado correctamente.');
             header('Location: ' . APP_URL . '/modules/email/index.php?carpeta=draft');
         } else {
-            // En produccion, aqui se enviaria via SMTP
             setFlash('success', 'Email enviado correctamente.');
             header('Location: ' . APP_URL . '/modules/email/index.php?carpeta=sent');
         }
         exit;
     }
 }
+
+render_form:
 
 // Obtener clientes para autocompletado
 $clientes = $db->query("SELECT id, nombre, apellidos, email FROM clientes WHERE email IS NOT NULL AND email != '' ORDER BY nombre ASC")->fetchAll();

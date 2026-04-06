@@ -3,6 +3,7 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/ajustes_helper.php';
 requireLogin();
 ob_start();
 
@@ -12,6 +13,13 @@ generarNotificacionesProspectosVencidos(currentUserId());
 $stmtNotif = $db->prepare("SELECT COUNT(*) FROM notificaciones WHERE usuario_id = ? AND leida = 0");
 $stmtNotif->execute([currentUserId()]);
 $notifCount = $stmtNotif->fetchColumn();
+
+$userSettings = [];
+try {
+    $userSettings = getUserSettings();
+} catch (Exception $e) {
+    logError('No se pudieron cargar ajustes de usuario', ['error' => $e->getMessage()]);
+}
 
 // Load whitelabel config (colors, branding)
 $_wl = null;
@@ -28,6 +36,24 @@ $_colorAccent = $_wl['color_acento'] ?? '#f59e0b';
 $_logoUrl = $_wl['app_logo_url'] ?? '';
 $_faviconUrl = $_wl['app_favicon_url'] ?? '';
 $_customCss = $_wl['css_custom'] ?? '';
+$_appIconUrl = $_faviconUrl ?: (APP_URL . '/assets/favicons/favicon_64x64.png');
+
+$_userTheme = ($userSettings['tema'] ?? 'claro') === 'oscuro' ? 'dark' : 'light';
+$_userSidebarCompacta = ($userSettings['sidebar_compacta'] ?? '0') === '1';
+
+$_colorKeys = [
+    'emerald' => '#10b981',
+    'blue' => '#3b82f6',
+    'purple' => '#8b5cf6',
+    'orange' => '#f97316',
+    'rose' => '#f43f5e',
+    'cyan' => '#06b6d4',
+];
+
+$_userColorKey = $userSettings['color_primario'] ?? '';
+if (isset($_colorKeys[$_userColorKey])) {
+    $_colorPrimary = $_colorKeys[$_userColorKey];
+}
 
 // Compute color variants from primary
 function hexToHsl($hex) {
@@ -62,12 +88,22 @@ $isDashboard = ($currentPath === APP_URL . '/index.php' || $currentPath === '/in
 $allowedModulesForMenu = getAllowedModulesForCurrentUser();
 ?>
 <!DOCTYPE html>
-<html lang="es" data-bs-theme="light">
+<html lang="es" data-bs-theme="<?= $_userTheme ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= $pageTitle ?? APP_NAME ?> - <?= htmlspecialchars($_appName) ?></title>
-    <?php if ($_faviconUrl): ?><link rel="icon" href="<?= htmlspecialchars($_faviconUrl) ?>"><?php endif; ?>
+    <?php if ($_faviconUrl): ?>
+        <link rel="icon" type="image/x-icon" href="<?= htmlspecialchars($_faviconUrl) ?>">
+        <link rel="apple-touch-icon" href="<?= htmlspecialchars($_faviconUrl) ?>">
+    <?php else: ?>
+        <link rel="icon" type="image/png" sizes="32x32" href="<?= APP_URL ?>/assets/favicons/favicon_32x32.png">
+        <link rel="icon" type="image/png" sizes="16x16" href="<?= APP_URL ?>/assets/favicons/favicon_16x16.png">
+        <link rel="icon" type="image/x-icon" href="<?= APP_URL ?>/assets/favicons/favicon.ico">
+        <link rel="icon" type="image/png" sizes="48x48" href="<?= APP_URL ?>/assets/favicons/favicon_48x48.png">
+        <link rel="icon" type="image/png" sizes="64x64" href="<?= APP_URL ?>/assets/favicons/favicon_64x64.png">
+        <link rel="apple-touch-icon" sizes="180x180" href="<?= APP_URL ?>/assets/favicons/favicon_180x180.png">
+    <?php endif; ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -109,10 +145,9 @@ $allowedModulesForMenu = getAllowedModulesForCurrentUser();
     <script>
         // Dark mode: apply before render to prevent flash
         (function(){
-            const t = localStorage.getItem('theme');
-            if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                document.documentElement.setAttribute('data-bs-theme', 'dark');
-            }
+            const serverTheme = '<?= $_userTheme ?>';
+            document.documentElement.setAttribute('data-bs-theme', serverTheme);
+            localStorage.setItem('theme', serverTheme);
         })();
 
         // Hide sidebar links for custom roles with module restrictions.
@@ -138,14 +173,15 @@ $allowedModulesForMenu = getAllowedModulesForCurrentUser();
         })();
     </script>
 </head>
-<body>
+<body class="<?= $_userSidebarCompacta ? 'sidebar-compact' : '' ?>">
     <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
+            <img src="<?= htmlspecialchars($_appIconUrl) ?>" alt="Icono app" class="sidebar-app-icon" width="28" height="28">
             <?php if ($_logoUrl): ?>
-                <img src="<?= htmlspecialchars($_logoUrl) ?>" alt="Logo" style="max-height:36px;margin-bottom:4px">
+                <img src="<?= htmlspecialchars($_logoUrl) ?>" alt="Logo" class="sidebar-logo">
             <?php else: ?>
-                <h4><i class="bi bi-buildings"></i> <?= htmlspecialchars($_appName) ?></h4>
+                <h4><img src="<?= htmlspecialchars($_appIconUrl) ?>" alt="" class="sidebar-title-icon" width="18" height="18"> <?= htmlspecialchars($_appName) ?></h4>
             <?php endif; ?>
             <small class="sidebar-brand-subtitle">Software Empresarial</small>
         </div>
@@ -377,7 +413,7 @@ $allowedModulesForMenu = getAllowedModulesForCurrentUser();
                 <!-- Usuario -->
                 <div class="dropdown">
                     <button class="btn btn-link dropdown-toggle" data-bs-toggle="dropdown">
-                        <i class="bi bi-person-circle"></i> <?= sanitize(currentUserName()) ?>
+                        <i class="bi bi-person-circle"></i> <span class="top-user-name"><?= sanitize(currentUserName()) ?></span>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li><a class="dropdown-item" href="<?= APP_URL ?>/modules/usuarios/perfil.php"><i class="bi bi-person"></i> Mi Perfil</a></li>

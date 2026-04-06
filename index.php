@@ -349,41 +349,322 @@ $tempColors = ['frio' => '#3b82f6', 'templado' => '#f59e0b', 'caliente' => '#ef4
         display: inline-flex;
         align-items: center;
         gap: 6px;
+        line-height: 1.35;
+        text-align: left;
+        white-space: normal;
     }
 
     .scroll-table {
         max-height: 500px;
-        overflow-y: auto;
+        overflow: auto;
         border-radius: 8px;
         border: 1px solid rgba(0, 0, 0, 0.08);
+    }
+
+    .metric-row-ganancia {
+        grid-template-columns: repeat(4, 1fr);
+    }
+
+    .mobile-card-list {
+        display: none;
+        padding: 10px;
+    }
+
+    .mobile-lead-card {
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 14px;
+        background: #fff;
+        padding: 10px 11px;
+        margin-bottom: 10px;
+        box-shadow: 0 6px 14px rgba(15, 23, 42, 0.05);
+    }
+
+    .mobile-lead-card:last-child {
+        margin-bottom: 0;
+    }
+
+    .mobile-lead-card.is-danger {
+        border-color: rgba(239, 68, 68, 0.35);
+        background: rgba(254, 242, 242, 0.9);
+    }
+
+    .mobile-lead-card.is-warning {
+        border-color: rgba(245, 158, 11, 0.35);
+        background: rgba(255, 251, 235, 0.95);
+    }
+
+    .mobile-lead-card.is-muted {
+        border-color: rgba(100, 116, 139, 0.25);
+        background: rgba(241, 245, 249, 0.85);
+    }
+
+    .mobile-lead-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 7px;
+    }
+
+    .mobile-lead-name {
+        font-size: 0.86rem;
+        font-weight: 700;
+        color: #0f172a;
+        line-height: 1.25;
+        margin: 0;
+    }
+
+    .mobile-lead-stage {
+        font-size: 0.68rem;
+        font-weight: 600;
+        color: #475569;
+        white-space: nowrap;
+    }
+
+    .mobile-lead-meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px 10px;
+        font-size: 0.72rem;
+        color: #64748b;
+    }
+
+    .mobile-lead-meta strong {
+        color: #0f172a;
+        font-weight: 700;
+    }
+
+    .mobile-card-empty {
+        border: 1px dashed rgba(100, 116, 139, 0.35);
+        border-radius: 12px;
+        padding: 16px 10px;
+        text-align: center;
+        color: #64748b;
+        font-size: 0.8rem;
+    }
+
+    [data-bs-theme="dark"] .mobile-lead-card {
+        background: #0f172a;
+        border-color: #334155;
+        box-shadow: none;
+    }
+
+    [data-bs-theme="dark"] .mobile-lead-card.is-danger {
+        background: rgba(127, 29, 29, 0.2);
+        border-color: rgba(248, 113, 113, 0.35);
+    }
+
+    [data-bs-theme="dark"] .mobile-lead-card.is-warning {
+        background: rgba(120, 53, 15, 0.22);
+        border-color: rgba(251, 191, 36, 0.35);
+    }
+
+    [data-bs-theme="dark"] .mobile-lead-card.is-muted {
+        background: rgba(51, 65, 85, 0.35);
+        border-color: rgba(148, 163, 184, 0.35);
+    }
+
+    [data-bs-theme="dark"] .mobile-lead-name {
+        color: #f1f5f9;
+    }
+
+    [data-bs-theme="dark"] .mobile-lead-stage {
+        color: #cbd5e1;
+    }
+
+    [data-bs-theme="dark"] .mobile-lead-meta {
+        color: #94a3b8;
+    }
+
+    [data-bs-theme="dark"] .mobile-lead-meta strong {
+        color: #e2e8f0;
+    }
+
+    @media (max-width: 767.98px) {
+        .kpi-grid,
+        .finance-strip {
+            display: flex;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            gap: 10px;
+            margin: 0;
+            padding: 2px 2px 8px;
+            -webkit-overflow-scrolling: touch;
+            scroll-snap-type: x proximity;
+        }
+
+        .kpi-grid .kpi-col,
+        .finance-strip .finance-col {
+            flex: 0 0 78%;
+            max-width: 78%;
+            padding: 0;
+            scroll-snap-align: start;
+        }
+
+        .kpi-card {
+            padding: 12px 14px;
+            min-height: 96px;
+            border-radius: 14px;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+        }
+
+        .kpi-card .kpi-value {
+            font-size: 1.8rem;
+        }
+
+        .kpi-card .kpi-icon {
+            font-size: 2rem;
+            right: 10px;
+        }
+
+        .kpi-card .kpi-label {
+            font-size: 0.64rem;
+            letter-spacing: 0.6px;
+        }
+
+        .metric-row {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .metric-row-ganancia {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .metric-box {
+            padding: 12px 10px;
+            border-radius: 14px;
+        }
+
+        .metric-box .metric-value {
+            font-size: 1.2rem;
+        }
+
+        .metric-box .metric-label {
+            font-size: 0.64rem;
+            letter-spacing: 0.35px;
+        }
+
+        .pipeline-table {
+            min-width: 0;
+        }
+
+        .prospect-table {
+            min-width: 460px;
+        }
+
+        .scroll-table {
+            -webkit-overflow-scrolling: touch;
+            max-height: 420px;
+        }
+
+        .section-title {
+            font-size: 0.66rem;
+            padding: 7px 10px;
+            letter-spacing: 0.7px;
+        }
+
+        .quick-action {
+            border-radius: 14px;
+            min-height: 74px;
+            justify-content: center;
+            gap: 10px;
+            padding: 12px 10px;
+            font-size: 0.86rem;
+            box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
+        }
+
+        .quick-action i {
+            margin-right: 0;
+            font-size: 1.2rem;
+        }
+
+        .table-prospectos th:nth-child(1),
+        .table-prospectos td:nth-child(1),
+        .table-prospectos th:nth-child(5),
+        .table-prospectos td:nth-child(5),
+        .table-clientes th:nth-child(1),
+        .table-clientes td:nth-child(1) {
+            display: none;
+        }
+
+        .table-prospectos th,
+        .table-clientes th {
+            font-size: 0.64rem;
+            padding: 8px 8px;
+        }
+
+        .table-prospectos td,
+        .table-clientes td {
+            font-size: 0.73rem;
+            padding: 8px 8px;
+        }
+
+        .mobile-hide {
+            display: none !important;
+        }
+
+        .legend-mobile {
+            text-align: left !important;
+            font-size: 0.72rem;
+            line-height: 1.7;
+        }
+
+        .desktop-table-wrapper {
+            display: block;
+        }
+
+        .mobile-card-list {
+            display: none !important;
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .kpi-grid .kpi-col,
+        .finance-strip .finance-col {
+            flex-basis: 86%;
+            max-width: 86%;
+        }
+
+        .metric-row,
+        .metric-row-ganancia {
+            grid-template-columns: 1fr;
+        }
+
+        .quick-action {
+            justify-content: flex-start;
+            padding-left: 12px;
+        }
+
     }
 </style>
 
 
 <!-- KPIs Principales -->
-<div class="row g-3 mb-3">
-    <div class="col-6 col-lg-3">
+<div class="row g-3 mb-3 kpi-grid">
+    <div class="col-6 col-lg-3 kpi-col">
         <div class="kpi-card" style="background: linear-gradient(135deg, #1e40af, #3b82f6);">
             <div class="kpi-value"><?= $prospActivos ?></div>
             <div class="kpi-label">Prospectos Activos<br><small>(captación)</small></div>
             <i class="bi bi-person-plus kpi-icon"></i>
         </div>
     </div>
-    <div class="col-6 col-lg-3">
+    <div class="col-6 col-lg-3 kpi-col">
         <div class="kpi-card" style="background: linear-gradient(135deg, #047857, #10b981);">
             <div class="kpi-value"><?= $propCartera ?></div>
             <div class="kpi-label">Propiedades<br><small>en cartera</small></div>
             <i class="bi bi-house-door kpi-icon"></i>
         </div>
     </div>
-    <div class="col-6 col-lg-3">
+    <div class="col-6 col-lg-3 kpi-col">
         <div class="kpi-card" style="background: linear-gradient(135deg, #b45309, #f59e0b);">
             <div class="kpi-value"><?= $clientesActivos ?></div>
             <div class="kpi-label">Clientes<br><small>activos</small></div>
             <i class="bi bi-people kpi-icon"></i>
         </div>
     </div>
-    <div class="col-6 col-lg-3">
+    <div class="col-6 col-lg-3 kpi-col">
         <div class="kpi-card" style="background: linear-gradient(135deg, #7c3aed, #a78bfa);">
             <div class="kpi-value"><?= $visitasMes ?></div>
             <div class="kpi-label">Visitas este mes<br><small><?= $visitasHoy ?> hoy</small></div>
@@ -400,7 +681,7 @@ $tempColors = ['frio' => '#3b82f6', 'templado' => '#f59e0b', 'caliente' => '#ef4
                 <i class="bi bi-piggy-bank"></i> GANANCIA POTENCIAL TOTAL EN CARTERA
             </span>
         </div>
-        <div class="metric-row" style="grid-template-columns: repeat(4, 1fr);">
+        <div class="metric-row metric-row-ganancia">
             <div class="metric-box">
                 <div class="metric-value text-success"><?= formatPrecio($gananciaPotencial) ?></div>
                 <div class="metric-label">Prospectos</div>
@@ -423,8 +704,8 @@ $tempColors = ['frio' => '#3b82f6', 'templado' => '#f59e0b', 'caliente' => '#ef4
 </div>
 
 <!-- Comisiones, Pendiente, % -->
-<div class="row g-3 mb-3">
-    <div class="col-md-4">
+<div class="row g-3 mb-3 finance-strip">
+    <div class="col-md-4 finance-col">
         <div class="metric-box" style="background: #f0fdf4; border-color: #10b981;">
             <div class="d-flex align-items-center justify-content-center gap-2 mb-1">
                 <i class="bi bi-check-circle text-success"></i>
@@ -433,7 +714,7 @@ $tempColors = ['frio' => '#3b82f6', 'templado' => '#f59e0b', 'caliente' => '#ef4
             <div class="metric-value text-success"><?= formatPrecio($finanzas['comisiones_cobradas']) ?></div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-4 finance-col">
         <div class="metric-box" style="background: #fef3c7; border-color: #f59e0b;">
             <div class="d-flex align-items-center justify-content-center gap-2 mb-1">
                 <i class="bi bi-hourglass-split text-warning"></i>
@@ -442,7 +723,7 @@ $tempColors = ['frio' => '#3b82f6', 'templado' => '#f59e0b', 'caliente' => '#ef4
             <div class="metric-value text-warning"><?= formatPrecio($finanzas['pendiente_cobro']) ?></div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-4 finance-col">
         <div class="metric-box" style="background: #ede9fe; border-color: #8b5cf6;">
             <div class="d-flex align-items-center justify-content-center gap-2 mb-1">
                 <i class="bi bi-percent text-purple"></i>
@@ -609,11 +890,11 @@ $tempColors = ['frio' => '#3b82f6', 'templado' => '#f59e0b', 'caliente' => '#ef4
                     <i class="bi bi-telephone-forward"></i> CONTACTAR HOY — Top <?= count($prospectosList) ?> Prospectos
                     por Urgencia
                 </span>
-                <a href="<?= APP_URL ?>/modules/prospectos/index.php" class="btn btn-sm btn-outline-primary">Ver
+                <a href="<?= APP_URL ?>/modules/prospectos/index.php" class="btn btn-sm btn-outline-primary mobile-hide">Ver
                     todos</a>
             </div>
-            <div class="scroll-table" style="border: none; border-radius: 0;">
-                <table class="prospect-table">
+            <div class="scroll-table desktop-table-wrapper" style="border: none; border-radius: 0;">
+                <table class="prospect-table table-prospectos">
                     <thead>
                         <tr>
                             <th>#</th>
@@ -675,6 +956,44 @@ $tempColors = ['frio' => '#3b82f6', 'templado' => '#f59e0b', 'caliente' => '#ef4
                     </tbody>
                 </table>
             </div>
+            <div class="mobile-card-list">
+                <?php foreach ($prospectosList as $idx => $pr):
+                    $dias = intval($pr['dias_sin_contacto']);
+                    $cardClass = '';
+                    if ($pr['fecha_proximo_contacto'] && $pr['fecha_proximo_contacto'] < date('Y-m-d')) {
+                        $cardClass = 'is-danger';
+                    } elseif ($dias > 15) {
+                        $cardClass = 'is-muted';
+                    } elseif ($dias >= 5) {
+                        $cardClass = 'is-warning';
+                    }
+                    ?>
+                    <div class="mobile-lead-card <?= $cardClass ?>" style="cursor:pointer"
+                        onclick="location.href='<?= APP_URL ?>/modules/prospectos/ver.php?id=<?= $pr['id'] ?>'">
+                        <div class="mobile-lead-top">
+                            <p class="mobile-lead-name mb-0"><?= sanitize($pr['nombre']) ?></p>
+                            <span class="mobile-lead-stage"><?= $etapasLabels[$pr['etapa']] ?? $pr['etapa'] ?></span>
+                        </div>
+                        <div class="mobile-lead-meta">
+                            <div>Tel: <strong><?php if ($pr['telefono']): ?><a href="tel:<?= sanitize($pr['telefono']) ?>"
+                                        onclick="event.stopPropagation()"><?= sanitize($pr['telefono']) ?></a><?php else: ?>-<?php endif; ?></strong></div>
+                            <div>Días: <strong
+                                    class="<?= $dias > 15 ? 'text-danger' : ($dias > 7 ? 'text-warning' : 'text-success') ?>"><?= max(0, $dias) ?></strong>
+                            </div>
+                            <div>Próx: <strong><?= $pr['fecha_proximo_contacto'] ? formatFecha($pr['fecha_proximo_contacto']) : '-' ?></strong>
+                            </div>
+                            <div>Temp: <strong><?= $tempLabels[$pr['temperatura'] ?? 'frio'] ?? 'Frío' ?></strong></div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+                <?php if (empty($prospectosList)): ?>
+                    <div class="mobile-card-empty">
+                        <i class="bi bi-check-circle fs-4 d-block mb-2"></i>
+                        ¡Sin prospectos urgentes!
+                    </div>
+                <?php endif; ?>
+                <a href="<?= APP_URL ?>/modules/prospectos/index.php" class="btn btn-sm btn-outline-primary w-100 mt-2">Ver todos</a>
+            </div>
         </div>
     </div>
 
@@ -685,10 +1004,10 @@ $tempColors = ['frio' => '#3b82f6', 'templado' => '#f59e0b', 'caliente' => '#ef4
                 <span class="section-title" style="background: #dbeafe; color: #1e40af; font-size: 0.68rem;">
                     <i class="bi bi-people"></i> PSI — Clientes
                 </span>
-                <a href="<?= APP_URL ?>/modules/clientes/index.php" class="btn btn-sm btn-outline-primary">Ver todos</a>
+                <a href="<?= APP_URL ?>/modules/clientes/index.php" class="btn btn-sm btn-outline-primary mobile-hide">Ver todos</a>
             </div>
-            <div class="scroll-table" style="border: none; border-radius: 0;">
-                <table class="prospect-table">
+            <div class="scroll-table desktop-table-wrapper" style="border: none; border-radius: 0;">
+                <table class="prospect-table table-clientes">
                     <thead>
                         <tr>
                             <th>#</th>
@@ -730,12 +1049,42 @@ $tempColors = ['frio' => '#3b82f6', 'templado' => '#f59e0b', 'caliente' => '#ef4
                     </tbody>
                 </table>
             </div>
+            <div class="mobile-card-list">
+                <?php foreach ($clientesList as $idx => $cl):
+                    $dias = intval($cl['dias_sin_contacto']);
+                    $cardClass = $dias > 15 ? 'is-muted' : ($dias > 7 ? 'is-warning' : '');
+                    ?>
+                    <div class="mobile-lead-card <?= $cardClass ?>" style="cursor:pointer"
+                        onclick="location.href='<?= APP_URL ?>/modules/clientes/ver.php?id=<?= $cl['id'] ?>'">
+                        <div class="mobile-lead-top">
+                            <p class="mobile-lead-name mb-0"><?= sanitize($cl['nombre'] . ' ' . ($cl['apellidos'] ?? '')) ?></p>
+                            <span class="mobile-lead-stage">PSI</span>
+                        </div>
+                        <div class="mobile-lead-meta">
+                            <div>Tel: <strong><?php if ($cl['telefono']): ?><a href="tel:<?= sanitize($cl['telefono']) ?>"
+                                        onclick="event.stopPropagation()"><?= sanitize($cl['telefono']) ?></a><?php else: ?>-<?php endif; ?></strong></div>
+                            <div>Días: <strong
+                                    class="<?= $dias > 15 ? 'text-danger' : ($dias > 7 ? 'text-warning' : 'text-success') ?>"><?= max(0, $dias) ?></strong>
+                            </div>
+                            <div style="grid-column: 1 / -1;">Acción: <strong><?= sanitize(mb_strimwidth($cl['proxima_accion'] ?? '-', 0, 55, '...')) ?></strong>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+                <?php if (empty($clientesList)): ?>
+                    <div class="mobile-card-empty">
+                        <i class="bi bi-check-circle fs-4 d-block mb-2"></i>
+                        Sin clientes pendientes
+                    </div>
+                <?php endif; ?>
+                <a href="<?= APP_URL ?>/modules/clientes/index.php" class="btn btn-sm btn-outline-primary w-100 mt-2">Ver todos</a>
+            </div>
         </div>
     </div>
 </div>
 
 <!-- Legend -->
-<div class="mb-4 text-center">
+<div class="mb-4 text-center legend-mobile">
     <small class="text-muted">
         <span
             style="display:inline-block; width:10px; height:10px; background:rgba(239,68,68,0.15); border-radius:2px; margin-right:2px;"></span>
