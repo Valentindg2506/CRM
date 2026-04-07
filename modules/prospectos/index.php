@@ -16,10 +16,15 @@ $isAdm = isAdmin();
 
 // Filtros
 $filtroEtapa = get('etapa');
-$filtroEstado = get('estado');
 $filtroProvincia = get('provincia');
 $filtroBusqueda = get('q');
 $filtroActivo = get('activo', '1');
+$filtroContacto = get('contacto');
+$filtroPerPage = intval(get('per_page', 20));
+$perPageOptions = [10, 20, 50, 100];
+if (!in_array($filtroPerPage, $perPageOptions, true)) {
+    $filtroPerPage = 20;
+}
 $page = max(1, intval(get('page', 1)));
 
 $where = [];
@@ -29,8 +34,18 @@ if (!$isAdm) {
     $where[] = 'p.agente_id = ?';
     $params[] = currentUserId();
 }
-if ($filtroEtapa) { $where[] = 'p.etapa = ?'; $params[] = $filtroEtapa; }
-if ($filtroEstado) { $where[] = 'p.estado = ?'; $params[] = $filtroEstado; }
+if ($filtroEtapa) {
+    // Compatibilidad con etapas antiguas para no dejar fuera registros existentes.
+    if ($filtroEtapa === 'en_seguimiento') {
+        $where[] = 'p.etapa IN (?,?,?)';
+        $params[] = 'en_seguimiento';
+        $params[] = 'seguimiento';
+        $params[] = 'en_negociacion';
+    } else {
+        $where[] = 'p.etapa = ?';
+        $params[] = $filtroEtapa;
+    }
+}
 if ($filtroProvincia) { $where[] = 'p.provincia = ?'; $params[] = $filtroProvincia; }
 if ($filtroActivo !== '') { $where[] = 'p.activo = ?'; $params[] = $filtroActivo; }
 if ($filtroBusqueda) {
@@ -39,42 +54,51 @@ if ($filtroBusqueda) {
     $params = array_merge($params, [$busq, $busq, $busq, $busq, $busq]);
 }
 
+$orderBy = 'p.created_at DESC';
+if ($filtroContacto === 'hoy') {
+    $where[] = 'p.fecha_proximo_contacto = CURDATE()';
+    $orderBy = "COALESCE(p.hora_contacto, '23:59:59') ASC, p.created_at DESC";
+} elseif ($filtroContacto === 'vencidos') {
+    $where[] = 'p.fecha_proximo_contacto < CURDATE()';
+    $orderBy = "p.fecha_proximo_contacto ASC, COALESCE(p.hora_contacto, '23:59:59') ASC";
+} elseif ($filtroContacto === 'semana') {
+    $where[] = 'p.fecha_proximo_contacto BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)';
+    $orderBy = "p.fecha_proximo_contacto ASC, COALESCE(p.hora_contacto, '23:59:59') ASC";
+} elseif ($filtroContacto === 'sin_fecha') {
+    $where[] = 'p.fecha_proximo_contacto IS NULL';
+} elseif ($filtroContacto === 'proximos') {
+    $where[] = 'p.fecha_proximo_contacto IS NOT NULL';
+    $orderBy = "p.fecha_proximo_contacto ASC, COALESCE(p.hora_contacto, '23:59:59') ASC";
+}
+
 $whereStr = empty($where) ? '1=1' : implode(' AND ', $where);
 
 $stmtCount = $db->prepare("SELECT COUNT(*) FROM prospectos p WHERE $whereStr");
 $stmtCount->execute($params);
 $total = $stmtCount->fetchColumn();
-$pagination = paginate($total, 20, $page);
+$pagination = paginate($total, $filtroPerPage, $page);
 
 $stmtPros = $db->prepare("SELECT p.*, u.nombre as agente_nombre
     FROM prospectos p
     LEFT JOIN usuarios u ON p.agente_id = u.id
     WHERE $whereStr
-    ORDER BY p.created_at DESC
+    ORDER BY $orderBy
     LIMIT {$pagination['per_page']} OFFSET {$pagination['offset']}");
 $stmtPros->execute($params);
 $prospectos = $stmtPros->fetchAll();
 
 $provincias = getProvincias();
-$baseUrl = 'index.php?etapa=' . urlencode($filtroEtapa) . '&estado=' . urlencode($filtroEstado) . '&provincia=' . urlencode($filtroProvincia) . '&q=' . urlencode($filtroBusqueda) . '&activo=' . urlencode($filtroActivo);
+$baseUrl = 'index.php?etapa=' . urlencode($filtroEtapa) . '&provincia=' . urlencode($filtroProvincia) . '&q=' . urlencode($filtroBusqueda) . '&activo=' . urlencode($filtroActivo) . '&contacto=' . urlencode($filtroContacto) . '&per_page=' . urlencode((string)$filtroPerPage);
 
 $etapas = [
     'nuevo_lead' => ['label' => 'Nuevo Lead', 'color' => '#06b6d4'],
     'contactado' => ['label' => 'Contactado', 'color' => '#64748b'],
-    'seguimiento' => ['label' => 'Seguimiento', 'color' => '#3b82f6'],
-    'visita_programada' => ['label' => 'Visita Prog.', 'color' => '#8b5cf6'],
-    'en_negociacion' => ['label' => 'Negociación', 'color' => '#f59e0b'],
+    'en_seguimiento' => ['label' => 'En Seguimiento', 'color' => '#3b82f6'],
+    'visita_programada' => ['label' => 'Visita Programada', 'color' => '#8b5cf6'],
     'captado' => ['label' => 'Captado', 'color' => '#10b981'],
     'descartado' => ['label' => 'Descartado', 'color' => '#ef4444'],
 ];
 
-$estados = [
-    'nuevo' => 'Nuevo',
-    'en_proceso' => 'En proceso',
-    'pendiente' => 'Pendiente',
-    'sin_interes' => 'Sin interés',
-    'captado' => 'Captado',
-];
 ?>
 
 <style>
@@ -118,9 +142,17 @@ $estados = [
 <!-- Stats rápidas por etapa -->
 <div class="row g-3 mb-4">
     <?php
-    $stmtStats = $db->query("SELECT etapa, COUNT(*) as total FROM prospectos WHERE activo = 1 GROUP BY etapa");
+    $stmtStats = $db->query("SELECT
+        CASE
+            WHEN etapa IN ('seguimiento', 'en_negociacion') THEN 'en_seguimiento'
+            ELSE etapa
+        END AS etapa_normalizada,
+        COUNT(*) as total
+        FROM prospectos
+        WHERE activo = 1
+        GROUP BY etapa_normalizada");
     $statsByEtapa = [];
-    while ($row = $stmtStats->fetch()) { $statsByEtapa[$row['etapa']] = $row['total']; }
+    while ($row = $stmtStats->fetch()) { $statsByEtapa[$row['etapa_normalizada']] = $row['total']; }
     foreach ($etapas as $eKey => $eData):
         $count = $statsByEtapa[$eKey] ?? 0;
     ?>
@@ -144,7 +176,7 @@ $estados = [
 
 <div class="filter-bar">
     <form method="GET" class="row g-2 align-items-end">
-        <div class="col-md-3">
+        <div class="col-md-2">
             <label class="form-label">Buscar</label>
             <input type="text" name="q" class="form-control form-control-sm" placeholder="Nombre, email, telefono, ref..." value="<?= sanitize($filtroBusqueda) ?>">
         </div>
@@ -158,15 +190,6 @@ $estados = [
             </select>
         </div>
         <div class="col-md-2">
-            <label class="form-label">Estado</label>
-            <select name="estado" class="form-select form-select-sm">
-                <option value="">Todos</option>
-                <?php foreach ($estados as $k => $v): ?>
-                <option value="<?= $k ?>" <?= $filtroEstado === $k ? 'selected' : '' ?>><?= $v ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <div class="col-md-2">
             <label class="form-label">Provincia</label>
             <select name="provincia" class="form-select form-select-sm">
                 <option value="">Todas</option>
@@ -175,12 +198,31 @@ $estados = [
                 <?php endforeach; ?>
             </select>
         </div>
+        <div class="col-md-2">
+            <label class="form-label">Contacto</label>
+            <select name="contacto" class="form-select form-select-sm">
+                <option value="">Todos</option>
+                <option value="proximos" <?= $filtroContacto === 'proximos' ? 'selected' : '' ?>>Más próximo</option>
+                <option value="hoy" <?= $filtroContacto === 'hoy' ? 'selected' : '' ?>>Hoy</option>
+                <option value="vencidos" <?= $filtroContacto === 'vencidos' ? 'selected' : '' ?>>Vencidos</option>
+                <option value="semana" <?= $filtroContacto === 'semana' ? 'selected' : '' ?>>Próx. 7 días</option>
+                <option value="sin_fecha" <?= $filtroContacto === 'sin_fecha' ? 'selected' : '' ?>>Sin fecha</option>
+            </select>
+        </div>
         <div class="col-md-1">
             <label class="form-label">Activo</label>
             <select name="activo" class="form-select form-select-sm">
                 <option value="1" <?= $filtroActivo === '1' ? 'selected' : '' ?>>Si</option>
                 <option value="0" <?= $filtroActivo === '0' ? 'selected' : '' ?>>No</option>
                 <option value="" <?= $filtroActivo === '' ? 'selected' : '' ?>>Todos</option>
+            </select>
+        </div>
+        <div class="col-md-1">
+            <label class="form-label">Por hoja</label>
+            <select name="per_page" class="form-select form-select-sm">
+                <?php foreach ($perPageOptions as $opt): ?>
+                <option value="<?= $opt ?>" <?= $filtroPerPage === $opt ? 'selected' : '' ?>><?= $opt ?></option>
+                <?php endforeach; ?>
             </select>
         </div>
         <div class="col-md-2">
@@ -228,11 +270,15 @@ $estados = [
                     <th>Teléfono</th>
                     <th>Etapa</th>
                     <th>Tipo</th>
+                    <th>Enlace</th>
                     <th>Dirección</th>
                     <th>Precio Est.</th>
                     <th>m²</th>
+                    <th>Publicación</th>
                     <th>Próx. Contacto</th>
+                    <?php if ($isAdm): ?>
                     <th>Agente</th>
+                    <?php endif; ?>
                     <th>Acciones</th>
                 </tr>
             </thead>
@@ -253,31 +299,61 @@ $estados = [
                         <?php else: ?>-<?php endif; ?>
                     </td>
                     <td>
-                        <?php $etapaInfo = $etapas[$pr['etapa']] ?? ['label' => $pr['etapa'], 'color' => '#64748b']; ?>
-                        <span class="badge-estado" style="background: <?= $etapaInfo['color'] ?>20; color: <?= $etapaInfo['color'] ?>;">
-                            <?= $etapaInfo['label'] ?>
+                        <?php
+                        $etapaVista = $pr['etapa'];
+                        if (in_array($etapaVista, ['seguimiento', 'en_negociacion'], true)) {
+                            $etapaVista = 'en_seguimiento';
+                        }
+                        $etapaInfo = $etapas[$etapaVista] ?? ['label' => $pr['etapa'], 'color' => '#64748b'];
+                        $etapaLabelTabla = $etapaInfo['label'] === 'En Seguimiento' ? 'Seguimiento' : $etapaInfo['label'];
+                        ?>
+                        <span class="badge-estado" style="background: <?= $etapaInfo['color'] ?>20; color: <?= $etapaInfo['color'] ?>; white-space: nowrap;">
+                            <?= $etapaLabelTabla ?>
                         </span>
                     </td>
                     <td><?= sanitize($pr['tipo_propiedad'] ?? '-') ?></td>
+                    <td>
+                        <?php if (!empty($pr['enlace'])): ?>
+                            <a href="<?= sanitize($pr['enlace']) ?>" target="_blank" rel="noopener" title="<?= sanitize($pr['enlace']) ?>" aria-label="Abrir enlace de propiedad">
+                                <i class="bi bi-box-arrow-up-right"></i>
+                            </a>
+                        <?php else: ?>-
+                        <?php endif; ?>
+                    </td>
                     <td><?= sanitize(mb_substr($pr['direccion'] ?? '-', 0, 25)) ?><?= mb_strlen($pr['direccion'] ?? '') > 25 ? '...' : '' ?></td>
                     <td class="fw-bold"><?= $pr['precio_estimado'] ? formatPrecio($pr['precio_estimado']) : '-' ?></td>
                     <td><?= $pr['superficie'] ? $pr['superficie'] . ' m²' : '-' ?></td>
+                    <td>
+                        <?php if (!empty($pr['fecha_publicacion_propiedad'])): ?>
+                            <?php
+                            $fechaPublicacion = new DateTime($pr['fecha_publicacion_propiedad']);
+                            $hoyPublicacion = new DateTime('today');
+                            $diasPublicada = max(0, intval($fechaPublicacion->diff($hoyPublicacion)->format('%a')));
+                            ?>
+                            <div><?= formatFecha($pr['fecha_publicacion_propiedad']) ?></div>
+                            <small class="text-muted"><?= $diasPublicada ?> días</small>
+                        <?php else: ?>-
+                        <?php endif; ?>
+                    </td>
                     <td>
                         <?php if ($pr['fecha_proximo_contacto']): ?>
                             <?php
                             $proxDate = new DateTime($pr['fecha_proximo_contacto']);
                             $today = new DateTime('today');
-                            $diff = $today->diff($proxDate);
                             $isPast = $proxDate < $today;
                             $isToday = $proxDate->format('Y-m-d') === $today->format('Y-m-d');
+                            $horaProxContacto = !empty($pr['hora_contacto']) ? substr($pr['hora_contacto'], 0, 5) : '--:--';
                             ?>
                             <span class="<?= $isPast ? 'text-danger fw-bold' : ($isToday ? 'text-warning fw-bold' : '') ?>">
                                 <?= formatFecha($pr['fecha_proximo_contacto']) ?>
                             </span>
+                            <br><small class="text-muted"><i class="bi bi-clock"></i> <?= $horaProxContacto ?></small>
                             <?php if ($isPast): ?><i class="bi bi-exclamation-triangle-fill text-danger ms-1" title="Vencido"></i><?php endif; ?>
                         <?php else: ?>-<?php endif; ?>
                     </td>
+                    <?php if ($isAdm): ?>
                     <td><?= sanitize($pr['agente_nombre'] ?? '-') ?></td>
+                    <?php endif; ?>
                     <td>
                         <div class="btn-group btn-group-sm">
                             <a href="ver.php?id=<?= $pr['id'] ?>" class="btn btn-outline-primary" title="Ver"><i class="bi bi-eye"></i></a>
@@ -292,7 +368,7 @@ $estados = [
                 </tr>
                 <?php endforeach; ?>
                 <?php if (empty($prospectos)): ?>
-                <tr><td colspan="12" class="text-center text-muted py-5">
+                <tr><td colspan="<?= $isAdm ? 14 : 13 ?>" class="text-center text-muted py-5">
                     <i class="bi bi-person-plus fs-1 d-block mb-2"></i>No se encontraron prospectos
                 </td></tr>
                 <?php endif; ?>

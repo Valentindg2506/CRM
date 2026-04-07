@@ -95,7 +95,7 @@ function exportarProspectos($prospectos) {
     $headers = ['Referencia', 'Nombre', 'Telefono', 'Telefono 2', 'Email',
         'Etapa', 'Estado', 'Tipo Propiedad', 'Direccion', 'Barrio', 'Localidad', 'Provincia', 'CP',
         'Precio Estimado', 'Precio Propietario', 'Superficie m2', 'Habitaciones',
-        'Enlace', 'Fecha Contacto', 'Prox. Contacto', 'Comision %', 'Exclusividad',
+        'Enlace', 'Fecha Publicacion', 'Fecha Contacto', 'Hora Contacto', 'Mejor Horario Contacto', 'Prox. Contacto', 'Comision %', 'Exclusividad',
         'Agente', 'Notas', 'Reformas', 'Historial Contactos', 'Fecha Alta'];
 
     $rows = [];
@@ -108,7 +108,7 @@ function exportarProspectos($prospectos) {
             $p['localidad'] ?? '', $p['provincia'] ?? '', $p['codigo_postal'] ?? '',
             $p['precio_estimado'] ?? '', $p['precio_propietario'] ?? '',
             $p['superficie'] ?? '', $p['habitaciones'] ?? '',
-            $p['enlace'] ?? '', $p['fecha_contacto'] ?? '', $p['fecha_proximo_contacto'] ?? '',
+            $p['enlace'] ?? '', $p['fecha_publicacion_propiedad'] ?? '', $p['fecha_contacto'] ?? '', $p['hora_contacto'] ?? '', $p['mejor_horario_contacto'] ?? '', $p['fecha_proximo_contacto'] ?? '',
             $p['comision'] ?? '', $p['exclusividad'] ? 'Si' : 'No',
             $p['agente_nombre'] ?? '',
             strip_tags($p['notas'] ?? ''), strip_tags($p['reformas'] ?? ''),

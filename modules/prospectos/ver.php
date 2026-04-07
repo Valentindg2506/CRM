@@ -44,24 +44,127 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'convertir_clien
     }
 }
 
+// Convertir a propiedad
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'convertir_propiedad') {
+    verifyCsrf();
+    try {
+        $tiposValidos = array_keys(getTiposPropiedad());
+        $tipoRaw = mb_strtolower(trim((string)($p['tipo_propiedad'] ?? '')));
+        $tipoMap = [
+            'atico' => 'atico',
+            'a?tico' => 'atico',
+            'local comercial' => 'local',
+            'nave industrial' => 'nave',
+        ];
+        $tipo = $tipoMap[$tipoRaw] ?? preg_replace('/[^a-z_]/', '', str_replace(' ', '_', $tipoRaw));
+        if (!in_array($tipo, $tiposValidos, true)) {
+            $tipo = 'otro';
+        }
+
+        $operacion = (string)($p['operacion'] ?? 'venta');
+        if (!in_array($operacion, ['venta', 'alquiler', 'alquiler_opcion_compra', 'traspaso'], true)) {
+            $operacion = 'venta';
+        }
+
+        $precio = $p['precio_propietario'] ?? $p['precio_estimado'] ?? 0;
+        $precio = is_numeric($precio) ? (float)$precio : 0;
+
+        $tituloBase = trim((string)($p['tipo_propiedad'] ?? 'Propiedad'));
+        $tituloZona = trim((string)($p['localidad'] ?? $p['provincia'] ?? ''));
+        $titulo = $tituloBase . ($tituloZona !== '' ? ' en ' . $tituloZona : ' captada desde prospecto');
+
+        $descripcionInterna = 'Convertida desde prospecto ' . $p['referencia'] . ' (ID ' . $id . ').';
+        if (!empty($p['descripcion_interna'])) {
+            $descripcionInterna .= "\n" . trim((string)$p['descripcion_interna']);
+        }
+
+        $propiedadData = [
+            'referencia' => generarReferencia(),
+            'titulo' => $titulo,
+            'tipo' => $tipo,
+            'operacion' => $operacion,
+            'estado' => 'disponible',
+            'precio' => $precio,
+            'precio_comunidad' => $p['precio_comunidad'] ?: null,
+            'superficie_construida' => $p['superficie_construida'] ?: ($p['superficie'] ?: null),
+            'superficie_util' => $p['superficie_util'] ?: null,
+            'superficie_parcela' => $p['superficie_parcela'] ?: null,
+            'habitaciones' => $p['habitaciones'] ?: null,
+            'banos' => $p['banos'] ?: null,
+            'aseos' => $p['aseos'] ?: null,
+            'planta' => $p['planta'] ?: null,
+            'ascensor' => !empty($p['ascensor']) ? 1 : 0,
+            'garaje_incluido' => !empty($p['garaje_incluido']) ? 1 : 0,
+            'trastero_incluido' => !empty($p['trastero_incluido']) ? 1 : 0,
+            'terraza' => !empty($p['terraza']) ? 1 : 0,
+            'balcon' => !empty($p['balcon']) ? 1 : 0,
+            'jardin' => !empty($p['jardin']) ? 1 : 0,
+            'piscina' => !empty($p['piscina']) ? 1 : 0,
+            'aire_acondicionado' => !empty($p['aire_acondicionado']) ? 1 : 0,
+            'calefaccion' => $p['calefaccion'] ?: null,
+            'orientacion' => $p['orientacion'] ?: null,
+            'antiguedad' => $p['antiguedad'] ?: null,
+            'estado_conservacion' => $p['estado_conservacion'] ?: null,
+            'certificacion_energetica' => $p['certificacion_energetica'] ?: null,
+            'referencia_catastral' => $p['referencia_catastral'] ?: null,
+            'direccion' => $p['direccion'] ?: null,
+            'numero' => $p['numero'] ?: null,
+            'piso_puerta' => $p['piso_puerta'] ?: null,
+            'codigo_postal' => $p['codigo_postal'] ?: null,
+            'localidad' => $p['localidad'] ?: null,
+            'provincia' => $p['provincia'] ?: null,
+            'comunidad_autonoma' => $p['comunidad_autonoma'] ?: null,
+            'latitud' => null,
+            'longitud' => null,
+            'descripcion' => $p['descripcion'] ?: ($p['notas'] ?: ''),
+            'descripcion_interna' => $descripcionInterna,
+            'propietario_id' => null,
+            'agente_id' => $p['agente_id'] ?: null,
+            'fecha_captacion' => date('Y-m-d'),
+            'fecha_disponibilidad' => null,
+        ];
+
+        $fields = array_keys($propiedadData);
+        $placeholders = str_repeat('?,', count($fields) - 1) . '?';
+        $db->prepare("INSERT INTO propiedades (`" . implode('`,`', $fields) . "`) VALUES ($placeholders)")->execute(array_values($propiedadData));
+        $propiedadId = $db->lastInsertId();
+
+        $db->prepare("UPDATE prospectos SET etapa = 'captado', estado = 'captado' WHERE id = ?")->execute([$id]);
+        registrarActividad('convertir', 'prospecto', $id, 'Convertido a propiedad #' . $propiedadId);
+
+        setFlash('success', 'Prospecto convertido a propiedad correctamente. <a href="' . APP_URL . '/modules/propiedades/ver.php?id=' . $propiedadId . '">Ver propiedad</a>');
+        header('Location: ver.php?id=' . $id);
+        exit;
+    } catch (Exception $e) {
+        setFlash('danger', 'Error al convertir a propiedad: ' . $e->getMessage());
+    }
+}
+
 $etapas = [
     'nuevo_lead' => ['label' => 'Nuevo Lead', 'color' => '#06b6d4', 'icon' => 'bi-star'],
     'contactado' => ['label' => 'Contactado', 'color' => '#64748b', 'icon' => 'bi-telephone'],
-    'seguimiento' => ['label' => 'En Seguimiento', 'color' => '#3b82f6', 'icon' => 'bi-arrow-repeat'],
+    'en_seguimiento' => ['label' => 'En Seguimiento', 'color' => '#3b82f6', 'icon' => 'bi-arrow-repeat'],
     'visita_programada' => ['label' => 'Visita Programada', 'color' => '#8b5cf6', 'icon' => 'bi-calendar-check'],
-    'en_negociacion' => ['label' => 'En Negociación', 'color' => '#f59e0b', 'icon' => 'bi-chat-left-dots'],
     'captado' => ['label' => 'Captado', 'color' => '#10b981', 'icon' => 'bi-check-circle'],
     'descartado' => ['label' => 'Descartado', 'color' => '#ef4444', 'icon' => 'bi-x-circle'],
 ];
 
 $estados = [
-    'nuevo' => 'Nuevo', 'en_proceso' => 'En Proceso', 'pendiente' => 'Pendiente Respuesta',
-    'sin_interes' => 'Sin Interés', 'captado' => 'Captado',
+    'nuevo_lead' => 'Nuevo lead',
+    'contactado' => 'Contactado',
+    'en_seguimiento' => 'En seguimiento',
+    'visita_programada' => 'Visita programada',
+    'captado' => 'Captado',
+    'descartado' => 'Descartado',
 ];
 
 $temperaturas = ['frio' => ['label' => 'Frío', 'color' => '#3b82f6', 'icon' => 'bi-snow'], 'templado' => ['label' => 'Templado', 'color' => '#f59e0b', 'icon' => 'bi-thermometer-half'], 'caliente' => ['label' => 'Caliente', 'color' => '#ef4444', 'icon' => 'bi-fire']];
 
-$etapaInfo = $etapas[$p['etapa']] ?? ['label' => $p['etapa'], 'color' => '#64748b', 'icon' => 'bi-circle'];
+$etapaActual = $p['etapa'];
+if (in_array($etapaActual, ['seguimiento', 'en_negociacion'], true)) {
+    $etapaActual = 'en_seguimiento';
+}
+$etapaInfo = $etapas[$etapaActual] ?? ['label' => $p['etapa'], 'color' => '#64748b', 'icon' => 'bi-circle'];
 $tempInfo = $temperaturas[$p['temperatura'] ?? 'frio'] ?? $temperaturas['frio'];
 
 // Historial de contactos
@@ -69,7 +172,7 @@ $stmtHist = $db->prepare("SELECT h.*, u.nombre as usuario_nombre, u.apellidos as
                            FROM historial_prospectos h 
                            LEFT JOIN usuarios u ON h.usuario_id = u.id 
                            WHERE h.prospecto_id = ? 
-                           ORDER BY h.created_at DESC LIMIT 50");
+                           ORDER BY COALESCE(h.fecha_evento, h.created_at) DESC LIMIT 50");
 $stmtHist->execute([$id]);
 $historial = $stmtHist->fetchAll();
 
@@ -118,6 +221,9 @@ $tiposHistorial = [
 [data-bs-theme="dark"] .timeline-text { color: #d1d5db; }
 .timeline-actions { opacity: 0; transition: opacity 0.15s; }
 .timeline-entry:hover .timeline-actions { opacity: 1; }
+@media (hover: none), (max-width: 991.98px) {
+    .timeline-actions { opacity: 1; }
+}
 
 /* Mini Calendar Container */
 .mini-cal-wrapper { background: #fff; border-radius: 8px; }
@@ -142,7 +248,7 @@ $tiposHistorial = [
         <span class="badge fs-6" style="background: <?= $etapaInfo['color'] ?>;">
             <i class="bi <?= $etapaInfo['icon'] ?>"></i> <?= $etapaInfo['label'] ?>
         </span>
-        <span class="editable-field" data-field="etapa" data-type="select" data-options='<?= json_encode(array_map(fn($e) => $e['label'], $etapas)) ?>' data-value="<?= $p['etapa'] ?>">
+        <span class="editable-field" data-field="etapa" data-type="select" data-options='<?= json_encode(array_map(fn($e) => $e['label'], $etapas)) ?>' data-value="<?= $etapaActual ?>">
             <i class="bi bi-pencil edit-icon"></i>
         </span>
         <span class="badge" style="background: <?= $tempInfo['color'] ?>;">
@@ -152,11 +258,16 @@ $tiposHistorial = [
         <?php if (!$p['activo']): ?><span class="badge bg-secondary ms-1">Inactivo</span><?php endif; ?>
     </div>
     <div class="d-flex gap-2">
-        <?php if ($p['etapa'] !== 'captado' && $p['etapa'] !== 'descartado'): ?>
+        <?php if ($etapaActual !== 'captado' && $etapaActual !== 'descartado'): ?>
         <form method="POST" class="d-inline" onsubmit="return confirm('¿Convertir este prospecto en cliente?')">
             <?= csrfField() ?>
             <input type="hidden" name="accion" value="convertir_cliente">
             <button type="submit" class="btn btn-success"><i class="bi bi-person-check"></i> Convertir a Cliente</button>
+        </form>
+        <form method="POST" class="d-inline" onsubmit="return confirm('¿Convertir este prospecto en propiedad?')">
+            <?= csrfField() ?>
+            <input type="hidden" name="accion" value="convertir_propiedad">
+            <button type="submit" class="btn btn-outline-success"><i class="bi bi-house-check"></i> Convertir a Propiedad</button>
         </form>
         <?php endif; ?>
         <a href="form.php?id=<?= $id ?>" class="btn btn-outline-primary"><i class="bi bi-pencil-square"></i> Formulario Completo</a>
@@ -174,10 +285,11 @@ $tiposHistorial = [
         <div class="d-flex justify-content-between align-items-center position-relative" style="z-index: 1;">
             <?php
             $etapaKeys = array_keys($etapas);
-            $currentIdx = array_search($p['etapa'], $etapaKeys);
+            $currentIdx = array_search($etapaActual, $etapaKeys, true);
+            if ($currentIdx === false) $currentIdx = 0;
             foreach ($etapas as $eKey => $eData):
                 $idx = array_search($eKey, $etapaKeys);
-                $isActive = $eKey === $p['etapa'];
+                $isActive = $eKey === $etapaActual;
                 $isPast = $idx < $currentIdx;
             ?>
             <div class="text-center flex-fill">
@@ -270,6 +382,22 @@ $tiposHistorial = [
             <div class="card-body">
                 <div class="row g-2 mb-3">
                     <div class="col-6">
+                        <div class="detail-label">Fecha Publicación</div>
+                        <span class="editable-field" data-field="fecha_publicacion_propiedad" data-type="date" data-value="<?= $p['fecha_publicacion_propiedad'] ?? '' ?>">
+                            <?php if (!empty($p['fecha_publicacion_propiedad'])): ?>
+                                <?php
+                                $fechaPub = new DateTime($p['fecha_publicacion_propiedad']);
+                                $hoyPub = new DateTime('today');
+                                $diasPub = max(0, intval($fechaPub->diff($hoyPub)->format('%a')));
+                                ?>
+                                <span class="detail-value"><?= formatFecha($p['fecha_publicacion_propiedad']) ?> (<?= $diasPub ?> días)</span>
+                            <?php else: ?>
+                                <span class="detail-value">-</span>
+                            <?php endif; ?>
+                            <i class="bi bi-pencil edit-icon"></i>
+                        </span>
+                    </div>
+                    <div class="col-6">
                         <div class="detail-label">Primer Contacto</div>
                         <span class="editable-field" data-field="fecha_contacto" data-type="date" data-value="<?= $p['fecha_contacto'] ?? '' ?>">
                             <span class="detail-value"><?= $p['fecha_contacto'] ? formatFecha($p['fecha_contacto']) : '-' ?></span>
@@ -294,6 +422,20 @@ $tiposHistorial = [
                             <?php else: ?>
                                 <span class="text-muted">-</span>
                             <?php endif; ?>
+                            <i class="bi bi-pencil edit-icon"></i>
+                        </span>
+                    </div>
+                    <div class="col-6">
+                        <div class="detail-label">Hora de Contacto</div>
+                        <span class="editable-field" data-field="hora_contacto" data-type="time" data-value="<?= $p['hora_contacto'] ?? '' ?>">
+                            <span class="detail-value"><?= !empty($p['hora_contacto']) ? substr($p['hora_contacto'], 0, 5) : '-' ?></span>
+                            <i class="bi bi-pencil edit-icon"></i>
+                        </span>
+                    </div>
+                    <div class="col-6">
+                        <div class="detail-label">Mejor Horario Contacto</div>
+                        <span class="editable-field" data-field="mejor_horario_contacto" data-type="text" data-value="<?= sanitize($p['mejor_horario_contacto'] ?? '') ?>">
+                            <span class="detail-value"><?= !empty($p['mejor_horario_contacto']) ? sanitize($p['mejor_horario_contacto']) : '-' ?></span>
                             <i class="bi bi-pencil edit-icon"></i>
                         </span>
                     </div>
@@ -384,11 +526,12 @@ $tiposHistorial = [
                         $displayVal = $val ?: '-';
                         if (($pf['format'] ?? '') === 'precio' && $val) $displayVal = formatPrecio($val);
                         if (($pf['format'] ?? '') === 'superficie' && $val) $displayVal = formatSuperficie($val);
+                        $isFormatted = in_array(($pf['format'] ?? ''), ['precio', 'superficie'], true);
                     ?>
                     <div class="<?= $pf['col'] ?>">
                         <div class="detail-label"><?= $pf['label'] ?></div>
                         <span class="editable-field" data-field="<?= $pf['field'] ?>" data-type="<?= $pf['type'] ?>" data-value="<?= sanitize($val) ?>" <?= isset($pf['options']) ? "data-options='" . $pf['options'] . "'" : '' ?>>
-                            <span class="detail-value <?= ($pf['format'] ?? '') === 'precio' ? 'fw-bold' : '' ?>"><?= sanitize($displayVal) ?></span>
+                            <span class="detail-value <?= ($pf['format'] ?? '') === 'precio' ? 'fw-bold' : '' ?>"><?= $isFormatted ? $displayVal : sanitize($displayVal) ?></span>
                             <i class="bi bi-pencil edit-icon"></i>
                         </span>
                     </div>
@@ -464,6 +607,7 @@ $tiposHistorial = [
                         <?php foreach ($historial as $h):
                             $hTipo = $tiposHistorial[$h['tipo']] ?? $tiposHistorial['otro'];
                             $iniciales = strtoupper(mb_substr($h['usuario_nombre'] ?? '?', 0, 1) . mb_substr($h['usuario_apellidos'] ?? '', 0, 1));
+                            $fechaHistorial = $h['fecha_evento'] ?: $h['created_at'];
                         ?>
                         <div class="timeline-entry" data-id="<?= $h['id'] ?>">
                             <div class="timeline-avatar" style="background: <?= $hTipo['color'] ?>;"><?= $iniciales ?></div>
@@ -473,8 +617,15 @@ $tiposHistorial = [
                                     <span class="tipo-badge" style="background: <?= $hTipo['color'] ?>20; color: <?= $hTipo['color'] ?>;">
                                         <i class="bi <?= $hTipo['icon'] ?>"></i> <?= $hTipo['label'] ?>
                                     </span>
-                                    <span class="date"><?= date('d/m/Y H:i', strtotime($h['created_at'])) ?></span>
+                                    <span class="date"><?= date('d/m/Y H:i', strtotime($fechaHistorial)) ?></span>
                                     <div class="timeline-actions ms-auto">
+                                        <button
+                                            class="btn btn-sm btn-link text-secondary p-0 me-2 btn-edit-historial-fecha"
+                                            data-id="<?= $h['id'] ?>"
+                                            data-fecha="<?= date('Y-m-d\TH:i', strtotime($fechaHistorial)) ?>"
+                                            title="Editar fecha/hora">
+                                            <i class="bi bi-clock-history"></i>
+                                        </button>
                                         <button class="btn btn-sm btn-link text-danger p-0" onclick="deleteHistorial(<?= $h['id'] ?>)" title="Eliminar">
                                             <i class="bi bi-x-lg"></i>
                                         </button>
@@ -491,6 +642,29 @@ $tiposHistorial = [
     </div>
 </div>
 
+<!-- Modal editar fecha/hora historial -->
+<div class="modal fade" id="historialFechaModal" tabindex="-1" aria-labelledby="historialFechaModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="historialFechaModalLabel"><i class="bi bi-clock-history"></i> Editar fecha y hora</h5>
+                <button type="button" class="btn-close" id="btnCerrarHistorialFechaModal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <label for="historialFechaInput" class="form-label">Selecciona fecha y hora</label>
+                <input type="datetime-local" id="historialFechaInput" class="form-control" step="300">
+                <div class="form-text">Selecciona fecha y hora en formato 24h.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" id="btnCancelarHistorialFechaModal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="btnGuardarHistorialFecha">
+                    <i class="bi bi-check2"></i> Guardar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Flatpickr CSS & JS -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/airbnb.css">
@@ -501,6 +675,49 @@ $tiposHistorial = [
 const PROSPECTO_ID = <?= $id ?>;
 const CSRF_TOKEN = '<?= csrfToken() ?>';
 const API_URL = '<?= APP_URL ?>/api/prospectos.php';
+let historialEditEntradaId = null;
+const historialFechaModalEl = document.getElementById('historialFechaModal');
+const historialFechaInput = document.getElementById('historialFechaInput');
+let historialFechaModal = null;
+let historialFechaBackdrop = null;
+
+if (historialFechaModalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+    historialFechaModal = new bootstrap.Modal(historialFechaModalEl);
+}
+
+function openHistorialFechaModal() {
+    if (!historialFechaModalEl) return;
+    if (historialFechaModal) {
+        historialFechaModal.show();
+        return;
+    }
+
+    historialFechaModalEl.style.display = 'block';
+    historialFechaModalEl.classList.add('show');
+    historialFechaModalEl.removeAttribute('aria-hidden');
+    document.body.classList.add('modal-open');
+
+    historialFechaBackdrop = document.createElement('div');
+    historialFechaBackdrop.className = 'modal-backdrop fade show';
+    document.body.appendChild(historialFechaBackdrop);
+}
+
+function closeHistorialFechaModal() {
+    if (!historialFechaModalEl) return;
+    if (historialFechaModal) {
+        historialFechaModal.hide();
+        return;
+    }
+
+    historialFechaModalEl.classList.remove('show');
+    historialFechaModalEl.style.display = 'none';
+    historialFechaModalEl.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('modal-open');
+    if (historialFechaBackdrop) {
+        historialFechaBackdrop.remove();
+        historialFechaBackdrop = null;
+    }
+}
 
 // ─────────────────────────────────
 // INLINE EDITING
@@ -543,6 +760,11 @@ document.querySelectorAll('.editable-field').forEach(el => {
         } else if (type === 'date') {
             input = document.createElement('input');
             input.type = 'date';
+            input.className = 'inline-input';
+            input.value = currentVal;
+        } else if (type === 'time') {
+            input = document.createElement('input');
+            input.type = 'time';
             input.className = 'inline-input';
             input.value = currentVal;
         } else {
@@ -621,18 +843,28 @@ function saveInlineField(field, value, el, originalHTML) {
 // ─────────────────────────────────
 let selectedCalDate = null;
 
-const miniCal = flatpickr('#miniCalendar', {
-    inline: true,
-    locale: 'es',
-    dateFormat: 'Y-m-d',
-    defaultDate: '<?= $p['fecha_proximo_contacto'] ?? 'today' ?>',
-    onChange: function(selectedDates, dateStr) {
-        selectedCalDate = dateStr;
-        loadTasksForDay(dateStr);
+if (typeof flatpickr === 'function' && document.getElementById('miniCalendar')) {
+    flatpickr('#miniCalendar', {
+        inline: true,
+        locale: 'es',
+        dateFormat: 'Y-m-d',
+        defaultDate: '<?= $p['fecha_proximo_contacto'] ?? 'today' ?>',
+        onChange: function(selectedDates, dateStr) {
+            selectedCalDate = dateStr;
+            loadTasksForDay(dateStr);
+        }
+    });
+} else {
+    const miniCalendarContainer = document.getElementById('miniCalendar');
+    if (miniCalendarContainer) {
+        miniCalendarContainer.innerHTML = '<div class="alert alert-warning py-2 px-3 mb-0 small">No se pudo cargar el calendario en este momento.</div>';
     }
-});
+}
 
 function loadTasksForDay(fecha) {
+    if (!document.getElementById('miniCalTasks') || !document.getElementById('miniCalTaskList') || !document.getElementById('miniCalDate')) {
+        return;
+    }
     document.getElementById('miniCalTasks').style.display = 'block';
     document.getElementById('miniCalDate').textContent = new Date(fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
     document.getElementById('miniCalTaskList').innerHTML = '<div class="text-center"><span class="spinner-border spinner-border-sm"></span></div>';
@@ -655,7 +887,8 @@ function loadTasksForDay(fecha) {
     });
 }
 
-document.getElementById('btnSetProxContacto').addEventListener('click', function() {
+const btnSetProxContacto = document.getElementById('btnSetProxContacto');
+if (btnSetProxContacto) btnSetProxContacto.addEventListener('click', function() {
     if (!selectedCalDate) return;
     const body = new FormData();
     body.append('csrf_token', CSRF_TOKEN);
@@ -736,6 +969,9 @@ function addHistorialEntry() {
                         </span>
                         <span class="date">${e.fecha}</span>
                         <div class="timeline-actions ms-auto">
+                            <button class="btn btn-sm btn-link text-secondary p-0 me-2 btn-edit-historial-fecha" data-id="${e.id}" data-fecha="${e.fecha_iso}" title="Editar fecha/hora">
+                                <i class="bi bi-clock-history"></i>
+                            </button>
                             <button class="btn btn-sm btn-link text-danger p-0" onclick="deleteHistorial(${e.id})" title="Eliminar">
                                 <i class="bi bi-x-lg"></i>
                             </button>
@@ -781,6 +1017,75 @@ function deleteHistorial(id) {
         }
     });
 }
+
+function openHistorialFechaEditor(id, fechaActual) {
+    if (!historialFechaInput) return;
+
+    historialEditEntradaId = id;
+    if (fechaActual) {
+        historialFechaInput.value = fechaActual;
+    } else {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - (now.getMinutes() % 5));
+        historialFechaInput.value = now.toISOString().slice(0, 16);
+    }
+    openHistorialFechaModal();
+}
+
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-edit-historial-fecha');
+    if (!btn) return;
+    e.preventDefault();
+    const id = parseInt(btn.dataset.id || '0', 10);
+    const fecha = btn.dataset.fecha || '';
+    if (!id) return;
+    openHistorialFechaEditor(id, fecha);
+});
+
+const btnCerrarHistorialFechaModal = document.getElementById('btnCerrarHistorialFechaModal');
+if (btnCerrarHistorialFechaModal) btnCerrarHistorialFechaModal.addEventListener('click', closeHistorialFechaModal);
+const btnCancelarHistorialFechaModal = document.getElementById('btnCancelarHistorialFechaModal');
+if (btnCancelarHistorialFechaModal) btnCancelarHistorialFechaModal.addEventListener('click', closeHistorialFechaModal);
+
+const btnGuardarHistorialFecha = document.getElementById('btnGuardarHistorialFecha');
+if (btnGuardarHistorialFecha) btnGuardarHistorialFecha.addEventListener('click', function() {
+    if (!historialEditEntradaId) return;
+    if (!historialFechaInput) return;
+    const valor = historialFechaInput.value.trim();
+    if (!valor) {
+        alert('Selecciona una fecha y hora.');
+        return;
+    }
+
+    const btn = this;
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
+
+    const body = new FormData();
+    body.append('csrf_token', CSRF_TOKEN);
+    body.append('accion', 'edit_historial_fecha');
+    body.append('entrada_id', historialEditEntradaId);
+    body.append('fecha_evento', valor);
+
+    fetch(API_URL, { method: 'POST', body })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+        if (data.success) {
+            closeHistorialFechaModal();
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'No se pudo actualizar la fecha'));
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+        alert('Error de conexión');
+    });
+});
 </script>
 
 <style>

@@ -57,7 +57,7 @@ switch ($accion) {
 
     case 'cambiar_etapa':
         $etapa = post('etapa');
-        $etapasValidas = ['contactado','seguimiento','visita_programada','en_negociacion','captado','descartado'];
+        $etapasValidas = ['nuevo_lead','contactado','en_seguimiento','visita_programada','captado','descartado'];
         if (in_array($etapa, $etapasValidas)) {
             $stmt = $db->prepare("UPDATE prospectos SET etapa = ? WHERE id IN ($placeholders)");
             $stmt->execute(array_merge([$etapa], $ids));

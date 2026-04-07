@@ -58,6 +58,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'habitaciones' => ['habitaciones', 'hab', 'rooms', 'hab.'],
                     'enlace' => ['enlace', 'link', 'url'],
                     'fecha_contacto' => ['fecha_contacto', 'fecha contacto', 'first contact'],
+                    'hora_contacto' => ['hora_contacto', 'hora contacto', 'contact time'],
+                    'mejor_horario_contacto' => ['mejor_horario_contacto', 'mejor horario', 'best contact time'],
+                    'fecha_publicacion_propiedad' => ['fecha_publicacion_propiedad', 'fecha publicacion', 'publication date'],
                     'comision' => ['comision', 'comisión', 'commission'],
                     'notas' => ['notas', 'notes', 'observaciones'],
                     'reformas' => ['reformas', 'reforms'],
@@ -87,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmtRef = $db->query("SELECT MAX(CAST(SUBSTRING(referencia, 3) AS UNSIGNED)) as max_ref FROM prospectos WHERE referencia LIKE 'PR%'");
                     $maxRef = $stmtRef->fetch()['max_ref'] ?? 0;
 
-                    $etapasValidas = ['contactado','seguimiento','visita_programada','en_negociacion','captado','descartado'];
+                    $etapasValidas = ['nuevo_lead','contactado','seguimiento','visita_programada','en_negociacion','captado','descartado'];
 
                     while (($row = fgetcsv($handle, 0, $separator)) !== false) {
                         $linea++;
@@ -123,7 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'agente_id' => currentUserId(),
                             'activo' => 1,
                             'etapa' => 'contactado',
-                            'estado' => 'nuevo',
+                            'estado' => 'nuevo_lead',
                         ];
 
                         // Parse numeric fields
@@ -162,6 +165,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $dt = date_create_from_format('d/m/Y', $val) ?: date_create_from_format('Y-m-d', $val) ?: date_create_from_format('d-m-Y', $val);
                                 $data['fecha_contacto'] = $dt ? $dt->format('Y-m-d') : null;
                             }
+                        }
+                        if (isset($columnMap['fecha_publicacion_propiedad'])) {
+                            $val = trim($row[$columnMap['fecha_publicacion_propiedad']] ?? '');
+                            if ($val) {
+                                $dt = date_create_from_format('d/m/Y', $val) ?: date_create_from_format('Y-m-d', $val) ?: date_create_from_format('d-m-Y', $val);
+                                $data['fecha_publicacion_propiedad'] = $dt ? $dt->format('Y-m-d') : null;
+                            }
+                        }
+                        if (isset($columnMap['hora_contacto'])) {
+                            $val = trim($row[$columnMap['hora_contacto']] ?? '');
+                            if ($val && preg_match('/^([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/', $val)) {
+                                $data['hora_contacto'] = strlen($val) === 5 ? $val . ':00' : $val;
+                            }
+                        }
+                        if (isset($columnMap['mejor_horario_contacto'])) {
+                            $val = trim($row[$columnMap['mejor_horario_contacto']] ?? '');
+                            $data['mejor_horario_contacto'] = $val ?: null;
                         }
                         if (isset($columnMap['etapa'])) {
                             $val = trim(mb_strtolower($row[$columnMap['etapa']] ?? ''));
@@ -245,6 +265,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <tr><td>Habitaciones</td><td>habitaciones, hab, rooms</td><td>3</td></tr>
                             <tr><td>Enlace</td><td>enlace, link, url</td><td>https://...</td></tr>
                             <tr><td>Fecha Contacto</td><td>fecha_contacto</td><td>15/03/2026</td></tr>
+                            <tr><td>Fecha Publicación</td><td>fecha_publicacion_propiedad</td><td>01/03/2026</td></tr>
+                            <tr><td>Hora Contacto</td><td>hora_contacto</td><td>10:30</td></tr>
+                            <tr><td>Mejor Horario Contacto</td><td>mejor_horario_contacto</td><td>10:00 - 13:00</td></tr>
                             <tr><td>Comisión</td><td>comision, comisión</td><td>3.5</td></tr>
                             <tr><td>Notas</td><td>notas, notes</td><td>Interesado en vender</td></tr>
                             <tr><td>Reformas</td><td>reformas</td><td>Necesita baño</td></tr>
@@ -253,7 +276,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </table>
                 </div>
                 <div class="alert alert-info small mt-3 mb-0">
-                    <i class="bi bi-lightbulb"></i> <strong>Consejo:</strong> Las referencias (PR001, PR002...) se generan automáticamente. La etapa se establece como "Contactado" y el estado como "Nuevo" por defecto.
+                    <i class="bi bi-lightbulb"></i> <strong>Consejo:</strong> Las referencias (PR001, PR002...) se generan automáticamente. La etapa se establece como "Contactado" y el estado como "Nuevo lead" por defecto.
                 </div>
             </div>
         </div>

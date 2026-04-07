@@ -185,6 +185,30 @@ document.addEventListener('DOMContentLoaded', function() {
     tooltipTriggerList.map(function(el) {
         return new bootstrap.Tooltip(el);
     });
+
+    // ========= REAL BACK NAVIGATION =========
+    document.querySelectorAll('a.btn, a.btn-sm, a.btn-outline-secondary').forEach(function(link) {
+        const text = (link.textContent || '').trim().toLowerCase();
+        const hasBackIcon = !!link.querySelector('.bi-arrow-left');
+        const looksBackButton = hasBackIcon || text.startsWith('volver');
+        if (!looksBackButton) return;
+        if (!link.getAttribute('href') || link.getAttribute('href') === '#') return;
+        if (link.dataset.disableHistoryBack === '1') return;
+
+        link.addEventListener('click', function(e) {
+            const href = this.getAttribute('href') || '';
+            const hasReferrer = !!document.referrer;
+            if (window.history.length > 1 && hasReferrer) {
+                e.preventDefault();
+                window.history.back();
+                return;
+            }
+            // Fallback natural: seguir href cuando no hay historial real.
+            if (!href) {
+                e.preventDefault();
+            }
+        });
+    });
 });
 
 /**

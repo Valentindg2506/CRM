@@ -20,10 +20,12 @@ $queries = [
         usuario_id INT NOT NULL,
         contenido TEXT NOT NULL,
         tipo ENUM('llamada','email','visita','nota','whatsapp','otro') NOT NULL DEFAULT 'nota',
+        fecha_evento DATETIME DEFAULT NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (prospecto_id) REFERENCES prospectos(id) ON DELETE CASCADE,
         FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
         INDEX idx_prospecto (prospecto_id),
+        INDEX idx_fecha_evento (fecha_evento),
         INDEX idx_fecha (created_at DESC)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
 
@@ -35,6 +37,26 @@ $queries = [
 
     // 4. Etapa 'nuevo_lead'
     "ALTER TABLE prospectos MODIFY COLUMN etapa ENUM('nuevo_lead','contactado','seguimiento','visita_programada','en_negociacion','captado','descartado') NOT NULL DEFAULT 'nuevo_lead'",
+
+    // 4.1 Nuevos campos de seguimiento/publicacion
+    "ALTER TABLE prospectos ADD COLUMN fecha_publicacion_propiedad DATE DEFAULT NULL AFTER descripcion_interna",
+    "ALTER TABLE prospectos ADD COLUMN hora_contacto TIME DEFAULT NULL AFTER fecha_contacto",
+    "ALTER TABLE prospectos ADD COLUMN mejor_horario_contacto VARCHAR(100) DEFAULT NULL AFTER hora_contacto",
+
+    // 4.2 Campo editable de fecha/hora para historial
+    "ALTER TABLE historial_prospectos ADD COLUMN fecha_evento DATETIME DEFAULT NULL AFTER tipo",
+    "ALTER TABLE historial_prospectos ADD INDEX idx_fecha_evento (fecha_evento)",
+
+    // 4.3 Migrar enum de estado de prospectos sin perder datos
+    "ALTER TABLE prospectos MODIFY COLUMN estado ENUM('nuevo','en_proceso','pendiente','sin_interes','captado','descartado','nuevo_lead','contactado','en_seguimiento','visita_programada') NOT NULL DEFAULT 'nuevo'",
+    "UPDATE prospectos SET estado = CASE
+        WHEN estado = 'nuevo' THEN 'nuevo_lead'
+        WHEN estado = 'en_proceso' THEN 'en_seguimiento'
+        WHEN estado = 'pendiente' THEN 'contactado'
+        WHEN estado = 'sin_interes' THEN 'descartado'
+        ELSE estado
+    END",
+    "ALTER TABLE prospectos MODIFY COLUMN estado ENUM('nuevo_lead','contactado','en_seguimiento','visita_programada','captado','descartado') NOT NULL DEFAULT 'nuevo_lead'",
 
     // 5. Campos de propiedad completos
     "ALTER TABLE prospectos ADD COLUMN operacion ENUM('venta','alquiler','alquiler_opcion_compra','traspaso') DEFAULT NULL AFTER tipo_propiedad",
@@ -76,6 +98,8 @@ foreach ($queries as $sql) {
             $messages[] = "✅ Tabla '{$matches[1]}' creada.";
         } elseif (preg_match('/ADD COLUMN (\w+)/', $sql, $m)) {
             $messages[] = "✅ Columna '{$m[1]}' añadida.";
+        } elseif (preg_match('/ADD INDEX (\w+)/', $sql, $m)) {
+            $messages[] = "✅ Índice '{$m[1]}' añadido.";
         } elseif (strpos($sql, 'MODIFY') !== false) {
             $messages[] = "✅ ENUM actualizado.";
         }
@@ -83,6 +107,9 @@ foreach ($queries as $sql) {
         if (strpos($e->getMessage(), 'Duplicate column name') !== false) {
             preg_match('/ADD COLUMN (\w+)/', $sql, $m);
             $messages[] = "ℹ️ Columna '{$m[1]}' ya existe.";
+        } elseif (strpos($e->getMessage(), 'Duplicate key name') !== false) {
+            preg_match('/ADD INDEX (\w+)/', $sql, $m);
+            $messages[] = "ℹ️ Índice '{$m[1]}' ya existe.";
         } else {
             $success = false;
             $messages[] = "❌ ERROR: " . $e->getMessage();

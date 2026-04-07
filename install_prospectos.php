@@ -56,9 +56,12 @@ $queries = [
         enlace VARCHAR(500) DEFAULT NULL,
         descripcion TEXT DEFAULT NULL,
         descripcion_interna TEXT DEFAULT NULL,
+        fecha_publicacion_propiedad DATE DEFAULT NULL,
         fecha_contacto DATE DEFAULT NULL,
+        hora_contacto TIME DEFAULT NULL,
+        mejor_horario_contacto VARCHAR(100) DEFAULT NULL,
         fecha_proximo_contacto DATE DEFAULT NULL,
-        estado ENUM('nuevo','en_proceso','pendiente','sin_interes','captado') NOT NULL DEFAULT 'nuevo',
+        estado ENUM('nuevo_lead','contactado','en_seguimiento','visita_programada','captado','descartado') NOT NULL DEFAULT 'nuevo_lead',
         temperatura ENUM('frio','templado','caliente') DEFAULT 'frio',
         comision DECIMAL(5,2) DEFAULT NULL,
         exclusividad TINYINT(1) NOT NULL DEFAULT 0,
@@ -73,7 +76,9 @@ $queries = [
         INDEX idx_estado (estado),
         INDEX idx_agente (agente_id),
         INDEX idx_provincia (provincia),
+        INDEX idx_fecha_publicacion_propiedad (fecha_publicacion_propiedad),
         INDEX idx_fecha_contacto (fecha_contacto),
+        INDEX idx_hora_contacto (hora_contacto),
         INDEX idx_fecha_proximo (fecha_proximo_contacto),
         INDEX idx_referencia (referencia)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"

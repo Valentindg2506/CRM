@@ -30,6 +30,16 @@ function usuarioPuedeAccederProspecto($db, $prospectoId) {
     return intval($row['agente_id']) === intval(currentUserId());
 }
 
+function usuarioPuedeEditarHistorial($db, $entradaId) {
+    if (!$entradaId) return false;
+    if (isAdmin()) return true;
+    $stmt = $db->prepare("SELECT usuario_id FROM historial_prospectos WHERE id = ? LIMIT 1");
+    $stmt->execute([$entradaId]);
+    $row = $stmt->fetch();
+    if (!$row) return false;
+    return intval($row['usuario_id']) === intval(currentUserId());
+}
+
 // Verify CSRF for POST requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrfToken = $_POST['csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
@@ -69,7 +79,8 @@ switch ($accion) {
             'ascensor', 'garaje_incluido', 'trastero_incluido', 'terraza', 'balcon', 'jardin', 'piscina', 'aire_acondicionado',
             'calefaccion', 'orientacion', 'antiguedad', 'estado_conservacion', 'certificacion_energetica', 'referencia_catastral',
             'enlace', 'descripcion', 'descripcion_interna', 'comision', 'exclusividad', 'notas', 'reformas',
-            'fecha_contacto', 'fecha_proximo_contacto', 'agente_id'
+            'fecha_publicacion_propiedad', 'fecha_contacto', 'hora_contacto', 'mejor_horario_contacto',
+            'fecha_proximo_contacto', 'agente_id'
         ];
 
         if (!in_array($campo, $camposPermitidos)) {
@@ -108,8 +119,10 @@ switch ($accion) {
                 $valorFormateado = $valor ? number_format($valor, 2, ',', '.') . ' m²' : '-';
             } elseif ($campo === 'comision') {
                 $valorFormateado = $valor ? $valor . '%' : '-';
-            } elseif (in_array($campo, ['fecha_contacto', 'fecha_proximo_contacto'])) {
+            } elseif (in_array($campo, ['fecha_publicacion_propiedad', 'fecha_contacto', 'fecha_proximo_contacto'])) {
                 $valorFormateado = $valor ? date('d/m/Y', strtotime($valor)) : '-';
+            } elseif ($campo === 'hora_contacto') {
+                $valorFormateado = $valor ? substr($valor, 0, 5) : '-';
             }
 
             echo json_encode(['success' => true, 'valor_formateado' => $valorFormateado]);
@@ -150,6 +163,7 @@ switch ($accion) {
                                    WHERE h.id = ?");
             $stmt2->execute([$newId]);
             $entrada = $stmt2->fetch();
+            $fechaHistorial = $entrada['fecha_evento'] ?: $entrada['created_at'];
 
             registrarActividad('contacto', 'prospecto', $prospectoId, "[$tipo] $contenido");
 
@@ -161,7 +175,8 @@ switch ($accion) {
                     'tipo' => $entrada['tipo'],
                     'usuario' => htmlspecialchars(($entrada['usuario_nombre'] ?? '') . ' ' . ($entrada['usuario_apellidos'] ?? '')),
                     'usuario_iniciales' => strtoupper(mb_substr($entrada['usuario_nombre'] ?? '', 0, 1) . mb_substr($entrada['usuario_apellidos'] ?? '', 0, 1)),
-                    'fecha' => date('d/m/Y H:i', strtotime($entrada['created_at'])),
+                    'fecha' => date('d/m/Y H:i', strtotime($fechaHistorial)),
+                    'fecha_iso' => date('Y-m-d\\TH:i', strtotime($fechaHistorial)),
                     'fecha_relativa' => 'Ahora',
                 ]
             ]);
@@ -184,7 +199,7 @@ switch ($accion) {
                               FROM historial_prospectos h 
                               LEFT JOIN usuarios u ON h.usuario_id = u.id 
                               WHERE h.prospecto_id = ? 
-                              ORDER BY h.created_at DESC 
+                              ORDER BY COALESCE(h.fecha_evento, h.created_at) DESC 
                               LIMIT $perPage OFFSET $offset");
         $stmt->execute([$prospectoId]);
         $entradas = $stmt->fetchAll();
@@ -200,7 +215,8 @@ switch ($accion) {
                 'tipo' => $e['tipo'],
                 'usuario' => htmlspecialchars(($e['usuario_nombre'] ?? '') . ' ' . ($e['usuario_apellidos'] ?? '')),
                 'usuario_iniciales' => strtoupper(mb_substr($e['usuario_nombre'] ?? '', 0, 1) . mb_substr($e['usuario_apellidos'] ?? '', 0, 1)),
-                'fecha' => date('d/m/Y H:i', strtotime($e['created_at'])),
+                'fecha' => date('d/m/Y H:i', strtotime($e['fecha_evento'] ?: $e['created_at'])),
+                'fecha_iso' => date('Y-m-d\\TH:i', strtotime($e['fecha_evento'] ?: $e['created_at'])),
             ];
         }
 
@@ -216,6 +232,35 @@ switch ($accion) {
         try {
             $db->prepare("DELETE FROM historial_prospectos WHERE id = ? AND usuario_id = ?")->execute([$entradaId, currentUserId()]);
             echo json_encode(['success' => true]);
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+        break;
+
+    case 'edit_historial_fecha':
+        $entradaId = intval($_POST['entrada_id'] ?? 0);
+        $fechaEvento = trim($_POST['fecha_evento'] ?? '');
+
+        if (!$entradaId || !$fechaEvento) {
+            echo json_encode(['success' => false, 'error' => 'Parámetros inválidos']);
+            exit;
+        }
+        if (!usuarioPuedeEditarHistorial($db, $entradaId)) {
+            echo json_encode(['success' => false, 'error' => 'Sin permisos para editar esta entrada']);
+            exit;
+        }
+
+        $dt = DateTime::createFromFormat('Y-m-d\\TH:i', $fechaEvento);
+        if (!$dt) {
+            echo json_encode(['success' => false, 'error' => 'Formato de fecha/hora inválido']);
+            exit;
+        }
+
+        try {
+            $valorSql = $dt->format('Y-m-d H:i:s');
+            $db->prepare("UPDATE historial_prospectos SET fecha_evento = ? WHERE id = ?")
+               ->execute([$valorSql, $entradaId]);
+            echo json_encode(['success' => true, 'fecha' => date('d/m/Y H:i', strtotime($valorSql)), 'fecha_iso' => $dt->format('Y-m-d\\TH:i')]);
         } catch (Exception $e) {
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);
         }

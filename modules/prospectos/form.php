@@ -63,9 +63,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'enlace' => post('enlace') ?: null,
         'descripcion' => $_POST['descripcion'] ?? null,
         'descripcion_interna' => $_POST['descripcion_interna'] ?? null,
+        'fecha_publicacion_propiedad' => post('fecha_publicacion_propiedad') ?: null,
         'fecha_contacto' => post('fecha_contacto') ?: null,
+        'hora_contacto' => post('hora_contacto') ?: null,
+        'mejor_horario_contacto' => post('mejor_horario_contacto') ?: null,
         'fecha_proximo_contacto' => post('fecha_proximo_contacto') ?: null,
-        'estado' => post('estado', 'nuevo'),
+        'estado' => post('estado', 'nuevo_lead'),
         'temperatura' => post('temperatura', 'frio'),
         'comision' => post('comision') ? floatval(str_replace(',', '.', post('comision'))) : null,
         'exclusividad' => isset($_POST['exclusividad']) ? 1 : 0,
@@ -126,8 +129,12 @@ $etapas = [
 ];
 
 $estados = [
-    'nuevo' => 'Nuevo', 'en_proceso' => 'En Proceso', 'pendiente' => 'Pendiente Respuesta',
-    'sin_interes' => 'Sin Interés', 'captado' => 'Captado',
+    'nuevo_lead' => 'Nuevo lead',
+    'contactado' => 'Contactado',
+    'en_seguimiento' => 'En seguimiento',
+    'visita_programada' => 'Visita programada',
+    'captado' => 'Captado',
+    'descartado' => 'Descartado',
 ];
 
 $tiposPropiedad = ['Piso','Casa','Chalet','Adosado','Atico','Duplex','Estudio','Local','Oficina','Nave','Terreno','Garaje','Trastero','Edificio','Otro'];
@@ -184,7 +191,7 @@ $energeticas = ['A'=>'A','B'=>'B','C'=>'C','D'=>'D','E'=>'E','F'=>'F','G'=>'G','
                     <label class="form-label">Estado</label>
                     <select name="estado" class="form-select">
                         <?php foreach ($estados as $k => $v): ?>
-                        <option value="<?= $k ?>" <?= ($p['estado'] ?? 'nuevo') === $k ? 'selected' : '' ?>><?= $v ?></option>
+                        <option value="<?= $k ?>" <?= ($p['estado'] ?? 'nuevo_lead') === $k ? 'selected' : '' ?>><?= $v ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -398,8 +405,20 @@ $energeticas = ['A'=>'A','B'=>'B','C'=>'C','D'=>'D','E'=>'E','F'=>'F','G'=>'G','
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-3">
+                    <label class="form-label">Fecha Publicación Propiedad</label>
+                    <input type="date" name="fecha_publicacion_propiedad" class="form-control" value="<?= sanitize($p['fecha_publicacion_propiedad'] ?? '') ?>">
+                </div>
+                <div class="col-md-3">
                     <label class="form-label">Fecha Primer Contacto</label>
                     <input type="date" name="fecha_contacto" class="form-control" value="<?= sanitize($p['fecha_contacto'] ?? date('Y-m-d')) ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Hora de Contacto</label>
+                    <input type="time" name="hora_contacto" class="form-control" value="<?= sanitize($p['hora_contacto'] ?? '') ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Mejor Horario de Contacto</label>
+                    <input type="text" name="mejor_horario_contacto" class="form-control" placeholder="Ej: 10:00 - 13:00" value="<?= sanitize($p['mejor_horario_contacto'] ?? '') ?>">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Próximo Contacto</label>
