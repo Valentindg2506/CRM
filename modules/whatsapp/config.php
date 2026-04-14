@@ -2,13 +2,8 @@
 $pageTitle = 'Configuracion WhatsApp';
 require_once __DIR__ . '/../../includes/header.php';
 
-if (!isAdmin()) {
-    setFlash('danger', 'No tienes permisos para acceder a esta seccion.');
-    header('Location: ' . APP_URL . '/modules/whatsapp/index.php');
-    exit;
-}
-
 $db = getDB();
+$userId = (int) currentUserId();
 
 // Guardar configuracion
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -19,8 +14,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $webhookVerifyToken = post('webhook_verify_token');
     $activo = post('activo') ? 1 : 0;
 
-    // Verificar si ya existe configuracion
-    $existing = $db->query("SELECT id FROM whatsapp_config LIMIT 1")->fetch();
+    // Verificar si ya existe configuracion del usuario actual
+    $stmtExisting = $db->prepare("SELECT id FROM whatsapp_config WHERE updated_by = ? ORDER BY id DESC LIMIT 1");
+    $stmtExisting->execute([$userId]);
+    $existing = $stmtExisting->fetch();
 
     if ($existing) {
         $stmt = $db->prepare("
@@ -33,13 +30,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 updated_at = NOW()
             WHERE id = ?
         ");
-        $stmt->execute([$phoneNumberId, $accessToken, $webhookVerifyToken, $activo, currentUserId(), $existing['id']]);
+        $stmt->execute([$phoneNumberId, $accessToken, $webhookVerifyToken, $activo, $userId, $existing['id']]);
     } else {
         $stmt = $db->prepare("
             INSERT INTO whatsapp_config (phone_number_id, access_token, webhook_verify_token, activo, updated_by, updated_at)
             VALUES (?, ?, ?, ?, ?, NOW())
         ");
-        $stmt->execute([$phoneNumberId, $accessToken, $webhookVerifyToken, $activo, currentUserId()]);
+        $stmt->execute([$phoneNumberId, $accessToken, $webhookVerifyToken, $activo, $userId]);
     }
 
     registrarActividad('actualizar', 'whatsapp_config', null, 'Configuracion de WhatsApp actualizada');
@@ -48,8 +45,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// Obtener configuracion actual
-$config = $db->query("SELECT * FROM whatsapp_config LIMIT 1")->fetch();
+// Obtener configuracion actual del usuario
+$stmtConfig = $db->prepare("SELECT * FROM whatsapp_config WHERE updated_by = ? ORDER BY id DESC LIMIT 1");
+$stmtConfig->execute([$userId]);
+$config = $stmtConfig->fetch();
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">

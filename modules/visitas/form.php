@@ -2,6 +2,7 @@
 $pageTitle = 'Nueva Visita';
 require_once __DIR__ . '/../../includes/header.php';
 require_once __DIR__ . '/../../includes/email.php';
+require_once __DIR__ . '/../../includes/automatizaciones_engine.php';
 
 $db = getDB();
 $id = intval(get('id'));
@@ -22,6 +23,8 @@ if ($id) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
+
+    $estadoAnterior = $visita['estado'] ?? null;
 
     $data = [
         'propiedad_id' => intval(post('propiedad_id')),
@@ -63,6 +66,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                            ->execute([$tituloEvento, $fechaIni, $fechaFin, $data['propiedad_id'], $data['cliente_id'], $id, $data['agente_id']]);
                     }
                 } catch (Exception $e) { logError('Calendar sync error (edit visita): ' . $e->getMessage()); }
+
+                try {
+                    if (($data['estado'] ?? '') === 'realizada' && $estadoAnterior !== 'realizada') {
+                        automatizacionesEjecutarTrigger('visita_realizada', [
+                            'entidad_tipo' => 'visita',
+                            'entidad_id' => intval($id),
+                            'visita_id' => intval($id),
+                            'cliente_id' => intval($data['cliente_id'] ?? 0),
+                            'propiedad_id' => intval($data['propiedad_id'] ?? 0),
+                            'agente_id' => intval($data['agente_id'] ?? 0),
+                            'actor_user_id' => intval(currentUserId()),
+                            'owner_user_id' => intval(currentUserId()),
+                        ]);
+                    }
+                } catch (Throwable $e) {
+                    if (function_exists('logError')) {
+                        logError('Error trigger visita_realizada (edit): ' . $e->getMessage());
+                    }
+                }
             } else {
                 $fields = array_keys($data);
                 $placeholders = str_repeat('?,', count($fields) - 1) . '?';
@@ -95,6 +117,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         notificarNuevaVisita($vData, $pData, $cData, $aData);
                     }
                 } catch (Exception $e) { logError('Email visita error: ' . $e->getMessage()); }
+
+                try {
+                    automatizacionesEjecutarTrigger('nueva_visita', [
+                        'entidad_tipo' => 'visita',
+                        'entidad_id' => intval($id),
+                        'visita_id' => intval($id),
+                        'cliente_id' => intval($data['cliente_id'] ?? 0),
+                        'propiedad_id' => intval($data['propiedad_id'] ?? 0),
+                        'agente_id' => intval($data['agente_id'] ?? 0),
+                        'actor_user_id' => intval(currentUserId()),
+                        'owner_user_id' => intval(currentUserId()),
+                    ]);
+
+                    if (($data['estado'] ?? '') === 'realizada') {
+                        automatizacionesEjecutarTrigger('visita_realizada', [
+                            'entidad_tipo' => 'visita',
+                            'entidad_id' => intval($id),
+                            'visita_id' => intval($id),
+                            'cliente_id' => intval($data['cliente_id'] ?? 0),
+                            'propiedad_id' => intval($data['propiedad_id'] ?? 0),
+                            'agente_id' => intval($data['agente_id'] ?? 0),
+                            'actor_user_id' => intval(currentUserId()),
+                            'owner_user_id' => intval(currentUserId()),
+                        ]);
+                    }
+                } catch (Throwable $e) {
+                    if (function_exists('logError')) {
+                        logError('Error trigger visita (create): ' . $e->getMessage());
+                    }
+                }
             }
             setFlash('success', $visita ? 'Visita actualizada.' : 'Visita programada correctamente.');
             header('Location: index.php');

@@ -20,6 +20,8 @@ $filtroProvincia = get('provincia');
 $filtroBusqueda = get('q');
 $filtroActivo = get('activo', '1');
 $filtroContacto = get('contacto');
+$viewMode = get('view', 'tabla');
+$viewMode = in_array($viewMode, ['tabla', 'kanban'], true) ? $viewMode : 'tabla';
 $filtroPerPage = intval(get('per_page', 20));
 $perPageOptions = [10, 20, 50, 100];
 if (!in_array($filtroPerPage, $perPageOptions, true)) {
@@ -87,8 +89,19 @@ $stmtPros = $db->prepare("SELECT p.*, u.nombre as agente_nombre
 $stmtPros->execute($params);
 $prospectos = $stmtPros->fetchAll();
 
+$prospectosKanban = [];
+if ($viewMode === 'kanban') {
+    $stmtKanban = $db->prepare("SELECT p.*, u.nombre as agente_nombre
+        FROM prospectos p
+        LEFT JOIN usuarios u ON p.agente_id = u.id
+        WHERE $whereStr
+        ORDER BY p.created_at DESC");
+    $stmtKanban->execute($params);
+    $prospectosKanban = $stmtKanban->fetchAll();
+}
+
 $provincias = getProvincias();
-$baseUrl = 'index.php?etapa=' . urlencode($filtroEtapa) . '&provincia=' . urlencode($filtroProvincia) . '&q=' . urlencode($filtroBusqueda) . '&activo=' . urlencode($filtroActivo) . '&contacto=' . urlencode($filtroContacto) . '&per_page=' . urlencode((string)$filtroPerPage);
+$baseUrl = 'index.php?etapa=' . urlencode($filtroEtapa) . '&provincia=' . urlencode($filtroProvincia) . '&q=' . urlencode($filtroBusqueda) . '&activo=' . urlencode($filtroActivo) . '&contacto=' . urlencode($filtroContacto) . '&view=' . urlencode($viewMode) . '&per_page=' . urlencode((string)$filtroPerPage);
 
 $etapas = [
     'nuevo_lead' => ['label' => 'Nuevo Lead', 'color' => '#06b6d4'],
@@ -137,8 +150,123 @@ $etapas = [
         grid-template-columns: 1fr;
     }
 }
+
+.kanban-board {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(250px, 1fr));
+    gap: 14px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+}
+
+.kanban-column {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    min-height: 420px;
+    display: flex;
+    flex-direction: column;
+}
+
+.kanban-column-head {
+    border-bottom: 1px solid #e2e8f0;
+    padding: 10px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+}
+
+.kanban-column-body {
+    padding: 10px;
+    min-height: 340px;
+}
+
+.kanban-column-body.drag-over {
+    background: #eef2ff;
+    outline: 2px dashed #6366f1;
+    outline-offset: -4px;
+    border-radius: 10px;
+}
+
+.kanban-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-left: 4px solid #64748b;
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 10px;
+    box-shadow: 0 2px 6px rgba(2, 6, 23, 0.04);
+    cursor: grab;
+    color: #1e293b;
+}
+
+.kanban-card:active {
+    cursor: grabbing;
+}
+
+.kanban-card-title {
+    font-size: 0.92rem;
+    line-height: 1.3;
+    color: #0f172a;
+}
+
+.kanban-card-meta {
+    display: block;
+    font-size: 0.78rem;
+    color: #475569;
+    line-height: 1.35;
+}
+
+.kanban-empty {
+    border: 1px dashed #cbd5e1;
+    color: #94a3b8;
+    border-radius: 8px;
+    text-align: center;
+    padding: 18px 10px;
+    font-size: 0.82rem;
+}
+
+[data-bs-theme="dark"] .kanban-column {
+    background: #1f2937;
+    border-color: #334155;
+}
+
+[data-bs-theme="dark"] .kanban-column-head {
+    border-bottom-color: #334155;
+    background: #111827;
+}
+
+[data-bs-theme="dark"] .kanban-column-head .fw-semibold {
+    color: #f1f5f9 !important;
+}
+
+[data-bs-theme="dark"] .kanban-column-body.drag-over {
+    background: #1e1b4b;
+}
+
+[data-bs-theme="dark"] .kanban-card {
+    background: #0f172a;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
+[data-bs-theme="dark"] .kanban-card-title {
+    color: #f8fafc;
+}
+
+[data-bs-theme="dark"] .kanban-card-meta {
+    color: #94a3b8;
+}
+
+[data-bs-theme="dark"] .kanban-empty {
+    border-color: #475569;
+    color: #94a3b8;
+}
 </style>
 
+<?php if ($viewMode === 'tabla'): ?>
 <!-- Stats rápidas por etapa -->
 <div class="row g-3 mb-4">
     <?php
@@ -157,25 +285,38 @@ $etapas = [
         $count = $statsByEtapa[$eKey] ?? 0;
     ?>
     <div class="col-6 col-md-2">
-        <a href="index.php?etapa=<?= $eKey ?>&activo=1" class="stat-card d-block text-decoration-none" style="border-left: 3px solid <?= $eData['color'] ?>;">
+        <a href="index.php?etapa=<?= $eKey ?>&activo=1&view=<?= urlencode($viewMode) ?>" class="stat-card d-block text-decoration-none" style="border-left: 3px solid <?= $eData['color'] ?>;">
             <div class="stat-value" style="font-size: 1.3rem;"><?= $count ?></div>
             <div class="stat-label" style="font-size: 0.7rem;"><?= $eData['label'] ?></div>
         </a>
     </div>
     <?php endforeach; ?>
 </div>
+<?php endif; ?>
 
 <div class="d-flex justify-content-between align-items-center flex-column flex-md-row mb-4 prospectos-head">
     <span class="text-muted prospectos-head-count"><?= $total ?> prospectos encontrados</span>
     <div class="d-flex gap-2 flex-wrap justify-content-end prospectos-head-actions">
+        <div class="btn-group" role="group" aria-label="Cambiar vista">
+            <a href="index.php?etapa=<?= urlencode($filtroEtapa) ?>&provincia=<?= urlencode($filtroProvincia) ?>&q=<?= urlencode($filtroBusqueda) ?>&activo=<?= urlencode($filtroActivo) ?>&contacto=<?= urlencode($filtroContacto) ?>&per_page=<?= urlencode((string)$filtroPerPage) ?>&view=tabla" class="btn btn-outline-secondary <?= $viewMode === 'tabla' ? 'active' : '' ?>">
+                <i class="bi bi-table"></i> Tabla
+            </a>
+            <a href="index.php?etapa=<?= urlencode($filtroEtapa) ?>&provincia=<?= urlencode($filtroProvincia) ?>&q=<?= urlencode($filtroBusqueda) ?>&activo=<?= urlencode($filtroActivo) ?>&contacto=<?= urlencode($filtroContacto) ?>&per_page=<?= urlencode((string)$filtroPerPage) ?>&view=kanban" class="btn btn-outline-secondary <?= $viewMode === 'kanban' ? 'active' : '' ?>">
+                <i class="bi bi-kanban"></i> Kanban
+            </a>
+        </div>
+        <a href="form.php" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo Prospecto</a>
+        <?php if ($viewMode === 'tabla'): ?>
         <a href="import.php" class="btn btn-outline-info"><i class="bi bi-upload"></i> Importar CSV</a>
         <a href="index.php?accion=exportar" class="btn btn-outline-success"><i class="bi bi-file-earmark-spreadsheet"></i> Exportar CSV</a>
-        <a href="form.php" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo Prospecto</a>
+        <?php endif; ?>
     </div>
 </div>
 
+<?php if ($viewMode === 'tabla'): ?>
 <div class="filter-bar">
     <form method="GET" class="row g-2 align-items-end">
+        <input type="hidden" name="view" value="<?= sanitize($viewMode) ?>">
         <div class="col-md-2">
             <label class="form-label">Buscar</label>
             <input type="text" name="q" class="form-control form-control-sm" placeholder="Nombre, email, telefono, ref..." value="<?= sanitize($filtroBusqueda) ?>">
@@ -230,7 +371,67 @@ $etapas = [
         </div>
     </form>
 </div>
+<?php endif; ?>
 
+<?php if ($viewMode === 'kanban'): ?>
+<?php
+$kanbanBuckets = [];
+foreach (array_keys($etapas) as $etapaKey) {
+    $kanbanBuckets[$etapaKey] = [];
+}
+foreach ($prospectosKanban as $pr) {
+    $etapaVista = $pr['etapa'];
+    if (in_array($etapaVista, ['seguimiento', 'en_negociacion'], true)) {
+        $etapaVista = 'en_seguimiento';
+    }
+    if (!isset($kanbanBuckets[$etapaVista])) {
+        $kanbanBuckets[$etapaVista] = [];
+    }
+    $kanbanBuckets[$etapaVista][] = $pr;
+}
+?>
+<div class="kanban-board" id="kanbanBoard">
+    <?php foreach ($etapas as $etapaKey => $etapaMeta): ?>
+    <div class="kanban-column" data-etapa="<?= $etapaKey ?>">
+        <div class="kanban-column-head" style="border-top: 3px solid <?= $etapaMeta['color'] ?>;">
+            <div class="fw-semibold" style="font-size:.85rem; color:#0f172a;"><?= $etapaMeta['label'] ?></div>
+            <span class="badge text-bg-light" id="col-count-<?= $etapaKey ?>"><?= count($kanbanBuckets[$etapaKey] ?? []) ?></span>
+        </div>
+        <div class="kanban-column-body" data-droppable="1" data-etapa="<?= $etapaKey ?>">
+            <?php if (empty($kanbanBuckets[$etapaKey])): ?>
+                <div class="kanban-empty">Sin prospectos</div>
+            <?php else: ?>
+                <?php foreach ($kanbanBuckets[$etapaKey] as $pr): ?>
+                    <article class="kanban-card" draggable="true" data-id="<?= intval($pr['id']) ?>" data-etapa="<?= $etapaKey ?>" style="border-left-color: <?= $etapaMeta['color'] ?>;">
+                        <div class="d-flex justify-content-between align-items-start mb-1">
+                            <a href="ver.php?id=<?= intval($pr['id']) ?>" class="kanban-card-title text-decoration-none fw-semibold"><?= sanitize($pr['nombre']) ?></a>
+                            <?php if (!$pr['activo']): ?><span class="badge bg-secondary">Inactivo</span><?php endif; ?>
+                        </div>
+                        <small class="kanban-card-meta d-block mb-1"><i class="bi bi-hash"></i> <?= sanitize($pr['referencia']) ?></small>
+                        <?php if (!empty($pr['telefono'])): ?><small class="kanban-card-meta d-block"><i class="bi bi-telephone"></i> <?= sanitize($pr['telefono']) ?></small><?php endif; ?>
+                        <?php if (!empty($pr['email'])): ?><small class="kanban-card-meta d-block"><i class="bi bi-envelope"></i> <?= sanitize($pr['email']) ?></small><?php endif; ?>
+                        <?php if (!empty($pr['localidad']) || !empty($pr['provincia'])): ?><small class="kanban-card-meta d-block"><i class="bi bi-geo-alt"></i> <?= sanitize(trim(($pr['localidad'] ?? '') . ' ' . ($pr['provincia'] ?? ''))) ?></small><?php endif; ?>
+                        <?php if (!empty($pr['tipo_propiedad'])): ?><small class="kanban-card-meta d-block"><i class="bi bi-house"></i> <?= sanitize($pr['tipo_propiedad']) ?></small><?php endif; ?>
+                        <?php if (!empty($pr['precio_estimado'])): ?><small class="kanban-card-meta d-block"><i class="bi bi-cash"></i> <?= formatPrecio($pr['precio_estimado']) ?></small><?php endif; ?>
+                        <?php if (!empty($pr['fecha_proximo_contacto'])): ?><small class="kanban-card-meta d-block"><i class="bi bi-clock-history"></i> Próx. contacto: <?= formatFecha($pr['fecha_proximo_contacto']) ?><?= !empty($pr['hora_contacto']) ? ' ' . substr($pr['hora_contacto'], 0, 5) : '' ?></small><?php endif; ?>
+                        <?php if ($isAdm && !empty($pr['agente_nombre'])): ?><small class="kanban-card-meta d-block"><i class="bi bi-person-badge"></i> <?= sanitize($pr['agente_nombre']) ?></small><?php endif; ?>
+                        <div class="d-flex justify-content-end gap-1 mt-2">
+                            <?php if (!empty($pr['enlace'])): ?>
+                            <a href="<?= sanitize($pr['enlace']) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline-success" title="Abrir enlace"><i class="bi bi-box-arrow-up-right"></i></a>
+                            <?php endif; ?>
+                            <a href="form.php?id=<?= intval($pr['id']) ?>" class="btn btn-sm btn-outline-secondary" title="Editar"><i class="bi bi-pencil"></i></a>
+                            <a href="ver.php?id=<?= intval($pr['id']) ?>" class="btn btn-sm btn-outline-primary" title="Ver"><i class="bi bi-eye"></i></a>
+                        </div>
+                    </article>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
+
+<?php if ($viewMode === 'tabla'): ?>
 <!-- Bulk Actions Bar -->
 <div id="bulkBar" class="alert alert-primary d-none align-items-center justify-content-between mb-3">
     <span><strong id="bulkCount">0</strong> prospectos seleccionados</span>
@@ -378,6 +579,7 @@ $etapas = [
 </div>
 
 <?= renderPagination($pagination, $baseUrl) ?>
+<?php endif; ?>
 
 <script>
 const selectAll = document.getElementById('selectAll');
@@ -385,8 +587,10 @@ const bulkBar = document.getElementById('bulkBar');
 const bulkCount = document.getElementById('bulkCount');
 const checks = document.querySelectorAll('.bulk-check');
 const csrfToken = '<?= csrfToken() ?>';
+let draggedCard = null;
 
 function updateBulkBar() {
+    if (!bulkBar || !bulkCount) return;
     const selected = document.querySelectorAll('.bulk-check:checked');
     if (selected.length > 0) {
         bulkBar.classList.remove('d-none');
@@ -398,10 +602,12 @@ function updateBulkBar() {
     }
 }
 
-selectAll.addEventListener('change', function() {
-    checks.forEach(c => c.checked = this.checked);
-    updateBulkBar();
-});
+if (selectAll) {
+    selectAll.addEventListener('change', function() {
+        checks.forEach(c => c.checked = this.checked);
+        updateBulkBar();
+    });
+}
 checks.forEach(c => c.addEventListener('change', updateBulkBar));
 
 function getSelectedIds() {
@@ -437,6 +643,87 @@ function bulkToggleActive(val) {
 function bulkChangeEtapa(etapa) {
     bulkAction('cambiar_etapa', { etapa: etapa });
 }
+
+function updateKanbanCounts() {
+    document.querySelectorAll('.kanban-column').forEach(col => {
+        const etapa = col.dataset.etapa;
+        const countEl = document.getElementById('col-count-' + etapa);
+        if (!countEl) return;
+        countEl.textContent = col.querySelectorAll('.kanban-card').length;
+    });
+}
+
+function ensureKanbanEmptyState(columnBody) {
+    const cards = columnBody.querySelectorAll('.kanban-card');
+    let empty = columnBody.querySelector('.kanban-empty');
+    if (cards.length === 0) {
+        if (!empty) {
+            empty = document.createElement('div');
+            empty.className = 'kanban-empty';
+            empty.textContent = 'Sin prospectos';
+            columnBody.appendChild(empty);
+        }
+    } else if (empty) {
+        empty.remove();
+    }
+}
+
+document.querySelectorAll('.kanban-card').forEach(card => {
+    card.addEventListener('dragstart', function() {
+        draggedCard = card;
+        card.classList.add('opacity-50');
+    });
+    card.addEventListener('dragend', function() {
+        card.classList.remove('opacity-50');
+        draggedCard = null;
+    });
+});
+
+document.querySelectorAll('.kanban-column-body[data-droppable="1"]').forEach(zone => {
+    zone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        zone.classList.add('drag-over');
+    });
+    zone.addEventListener('dragleave', function() {
+        zone.classList.remove('drag-over');
+    });
+    zone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        zone.classList.remove('drag-over');
+        if (!draggedCard) return;
+
+        const newEtapa = zone.dataset.etapa;
+        const oldEtapa = draggedCard.dataset.etapa;
+        if (!newEtapa || newEtapa === oldEtapa) return;
+
+        const cardId = draggedCard.dataset.id;
+        const oldZone = draggedCard.closest('.kanban-column-body');
+
+        fetch('mover_etapa.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'csrf_token=' + encodeURIComponent(csrfToken) + '&id=' + encodeURIComponent(cardId) + '&etapa=' + encodeURIComponent(newEtapa)
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (!data || !data.ok) {
+                alert((data && data.error) ? data.error : 'No se pudo mover el prospecto.');
+                return;
+            }
+
+            const empty = zone.querySelector('.kanban-empty');
+            if (empty) empty.remove();
+            draggedCard.dataset.etapa = newEtapa;
+            zone.appendChild(draggedCard);
+            ensureKanbanEmptyState(oldZone);
+            ensureKanbanEmptyState(zone);
+            updateKanbanCounts();
+        })
+        .catch(() => {
+            alert('Error de red al mover el prospecto.');
+        });
+    });
+});
 </script>
 
 <?php require_once __DIR__ . '/../../includes/footer.php'; ?>

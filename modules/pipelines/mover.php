@@ -5,6 +5,7 @@
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/helpers.php';
+require_once __DIR__ . '/../../includes/automatizaciones_engine.php';
 if (session_status() === PHP_SESSION_NONE) session_start();
 
 header('Content-Type: application/json');
@@ -66,5 +67,22 @@ $stmtUpdate = $db->prepare("UPDATE pipeline_items SET etapa_id = ?, updated_at =
 $stmtUpdate->execute([$etapaId, $itemId]);
 
 registrarActividad('mover', 'pipeline_item', $itemId, 'Movido a etapa: ' . $etapa['nombre']);
+
+try {
+    automatizacionesEjecutarTrigger('pipeline_etapa_cambiada', [
+        'entidad_tipo' => 'pipeline_item',
+        'entidad_id' => intval($itemId),
+        'pipeline_item_id' => intval($itemId),
+        'cliente_id' => intval($item['cliente_id'] ?? 0),
+        'propiedad_id' => intval($item['propiedad_id'] ?? 0),
+        'actor_user_id' => intval(currentUserId()),
+        'owner_user_id' => intval(currentUserId()),
+        'etapa_id' => intval($etapaId),
+    ]);
+} catch (Throwable $e) {
+    if (function_exists('logError')) {
+        logError('Error trigger pipeline_etapa_cambiada: ' . $e->getMessage());
+    }
+}
 
 echo json_encode(['success' => true, 'etapa' => $etapa['nombre']]);

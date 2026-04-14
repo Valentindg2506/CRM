@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/email.php';
+require_once __DIR__ . '/../../includes/automatizaciones_engine.php';
 if (session_status() === PHP_SESSION_NONE) session_start();
 requireLogin();
 
@@ -168,11 +169,69 @@ foreach ($acciones as $acc) {
                 break;
 
             case 'enviar_whatsapp':
+                $waRes = automatizacionesEnviarWhatsapp($db, $auto, $config, [
+                    'cliente_id' => intval($config['cliente_id'] ?? 0),
+                    'agente_id' => intval($config['agente_id'] ?? 0),
+                ]);
+                $estado = $waRes['ok'] ? 'exito' : 'error';
+                $detalle = (string)$waRes['detalle'];
+                break;
+
             case 'cambiar_estado_propiedad':
+                $propId = intval($config['propiedad_id'] ?? 0);
+                $nuevoEstado = trim((string)($config['nuevo_estado'] ?? ''));
+                if ($propId <= 0 || $nuevoEstado === '') {
+                    $estado = 'pendiente';
+                    $detalle = 'Debes configurar propiedad_id y nuevo_estado para esta accion.';
+                    break;
+                }
+                $db->prepare("UPDATE propiedades SET estado = ? WHERE id = ?")->execute([$nuevoEstado, $propId]);
+                $estado = 'exito';
+                $detalle = 'Propiedad #' . $propId . ' actualizada a estado "' . $nuevoEstado . '".';
+                break;
+
             case 'asignar_agente':
+                $agenteId = intval($config['agente_id'] ?? 0);
+                $entidad = trim((string)($config['entidad'] ?? 'cliente'));
+                if ($agenteId <= 0) {
+                    $estado = 'pendiente';
+                    $detalle = 'Debes configurar agente_id para esta accion.';
+                    break;
+                }
+                if ($entidad === 'propiedad') {
+                    $propId = intval($config['propiedad_id'] ?? 0);
+                    if ($propId <= 0) {
+                        $estado = 'pendiente';
+                        $detalle = 'Debes configurar propiedad_id para asignar agente.';
+                        break;
+                    }
+                    $db->prepare("UPDATE propiedades SET agente_id = ? WHERE id = ?")->execute([$agenteId, $propId]);
+                    $estado = 'exito';
+                    $detalle = 'Agente #' . $agenteId . ' asignado a propiedad #' . $propId . '.';
+                } else {
+                    $clienteIdCfg = intval($config['cliente_id'] ?? 0);
+                    if ($clienteIdCfg <= 0) {
+                        $estado = 'pendiente';
+                        $detalle = 'Debes configurar cliente_id para asignar agente.';
+                        break;
+                    }
+                    $db->prepare("UPDATE clientes SET agente_id = ? WHERE id = ?")->execute([$agenteId, $clienteIdCfg]);
+                    $estado = 'exito';
+                    $detalle = 'Agente #' . $agenteId . ' asignado a cliente #' . $clienteIdCfg . '.';
+                }
+                break;
+
             case 'mover_pipeline':
-                $estado = 'pendiente';
-                $detalle = 'Accion "' . $acc['tipo'] . '" requiere contexto de entidad y no se ejecuta en modo manual directo.';
+                $itemId = intval($config['pipeline_item_id'] ?? 0);
+                $etapaId = intval($config['etapa_id'] ?? 0);
+                if ($itemId <= 0 || $etapaId <= 0) {
+                    $estado = 'pendiente';
+                    $detalle = 'Debes configurar pipeline_item_id y etapa_id para esta accion.';
+                    break;
+                }
+                $db->prepare("UPDATE pipeline_items SET etapa_id = ?, updated_at = NOW() WHERE id = ?")->execute([$etapaId, $itemId]);
+                $estado = 'exito';
+                $detalle = 'Pipeline item #' . $itemId . ' movido a etapa #' . $etapaId . '.';
                 break;
 
             default:

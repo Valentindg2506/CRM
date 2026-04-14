@@ -1,6 +1,7 @@
 <?php
 $pageTitle = 'Subir Documento';
 require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../includes/automatizaciones_engine.php';
 
 $db = getDB();
 
@@ -25,7 +26,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     currentUserId(),
                     $_POST['notas'] ?? null,
                 ]);
-            registrarActividad('crear', 'documento', $db->lastInsertId(), post('nombre'));
+            $docId = intval($db->lastInsertId());
+            registrarActividad('crear', 'documento', $docId, post('nombre'));
+
+            try {
+                automatizacionesEjecutarTrigger('nuevo_documento', [
+                    'entidad_tipo' => 'documento',
+                    'entidad_id' => $docId,
+                    'documento_id' => $docId,
+                    'cliente_id' => intval(post('cliente_id') ?: 0),
+                    'propiedad_id' => intval(post('propiedad_id') ?: 0),
+                    'actor_user_id' => intval(currentUserId()),
+                    'owner_user_id' => intval(currentUserId()),
+                ]);
+            } catch (Throwable $e) {
+                if (function_exists('logError')) {
+                    logError('Error trigger nuevo_documento: ' . $e->getMessage());
+                }
+            }
+
             setFlash('success', 'Documento subido correctamente.');
             header('Location: index.php');
             exit;

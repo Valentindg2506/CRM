@@ -49,8 +49,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'duplicar') {
 
     $orig = $db->prepare("SELECT * FROM automatizaciones WHERE id=?"); $orig->execute([$id]); $orig=$orig->fetch();
     if ($orig) {
-        $db->prepare("INSERT INTO automatizaciones (nombre, descripcion, trigger_tipo, condiciones, activo, created_by) VALUES (?,?,?,?,0,?)")
-            ->execute(['Copia de '.$orig['nombre'], $orig['descripcion'], $orig['trigger_tipo'], $orig['condiciones'], currentUserId()]);
+        $db->prepare("INSERT INTO automatizaciones (nombre, descripcion, trigger_tipo, trigger_condiciones, activo, created_by) VALUES (?,?,?,?,0,?)")
+            ->execute(['Copia de '.$orig['nombre'], $orig['descripcion'], $orig['trigger_tipo'], $orig['trigger_condiciones'], currentUserId()]);
         $newId = $db->lastInsertId();
         // Copy actions
         $acciones = $db->prepare("SELECT * FROM automatizacion_acciones WHERE automatizacion_id=? ORDER BY orden");
@@ -69,12 +69,24 @@ $pageTitle = 'Automatizaciones';
 require_once __DIR__ . '/../../includes/header.php';
 
 // Obtener automatizaciones
-$automatizaciones = $db->query("
-    SELECT a.*, u.nombre as creador_nombre
-    FROM automatizaciones a
-    LEFT JOIN usuarios u ON a.created_by = u.id
-    ORDER BY a.activo DESC, a.created_at DESC
-")->fetchAll();
+if (isAdmin()) {
+    $automatizaciones = $db->query("
+        SELECT a.*, u.nombre as creador_nombre
+        FROM automatizaciones a
+        LEFT JOIN usuarios u ON a.created_by = u.id
+        ORDER BY a.activo DESC, a.created_at DESC
+    ")->fetchAll();
+} else {
+    $stmtAutos = $db->prepare("
+        SELECT a.*, u.nombre as creador_nombre
+        FROM automatizaciones a
+        LEFT JOIN usuarios u ON a.created_by = u.id
+        WHERE a.created_by = ?
+        ORDER BY a.activo DESC, a.created_at DESC
+    ");
+    $stmtAutos->execute([intval(currentUserId())]);
+    $automatizaciones = $stmtAutos->fetchAll();
+}
 
 // Contar acciones por automatizacion
 $accionesCount = [];
@@ -193,6 +205,9 @@ $totalAcciones = array_sum($accionesCount);
         <span class="text-muted"><?= $totalAutomatizaciones ?> automatizacion<?= $totalAutomatizaciones !== 1 ? 'es' : '' ?></span>
     </div>
     <div class="d-flex gap-2">
+        <a href="diagnostico.php" class="btn btn-outline-secondary">
+            <i class="bi bi-shield-check"></i> Diagnostico
+        </a>
         <a href="workflows.php" class="btn btn-outline-primary">
             <i class="bi bi-diagram-3"></i> Workflows Visuales
         </a>
@@ -290,6 +305,7 @@ $totalAcciones = array_sum($accionesCount);
                     <div>
                         <h6 class="fw-bold mb-1" style="font-size:0.9rem">Bienvenida nuevo cliente</h6>
                         <p class="text-muted small mb-0">Envia un email de bienvenida y asigna una tarea de seguimiento al crear un cliente.</p>
+                        <a href="form.php?template=bienvenida_cliente" class="btn btn-sm btn-outline-primary mt-2">Usar plantilla</a>
                     </div>
                 </div>
             </div>
@@ -299,6 +315,7 @@ $totalAcciones = array_sum($accionesCount);
                     <div>
                         <h6 class="fw-bold mb-1" style="font-size:0.9rem">Post-visita</h6>
                         <p class="text-muted small mb-0">Envia encuesta de satisfaccion despues de cada visita realizada.</p>
+                        <a href="form.php?template=post_visita" class="btn btn-sm btn-outline-primary mt-2">Usar plantilla</a>
                     </div>
                 </div>
             </div>
@@ -308,6 +325,7 @@ $totalAcciones = array_sum($accionesCount);
                     <div>
                         <h6 class="fw-bold mb-1" style="font-size:0.9rem">Tarea vencida</h6>
                         <p class="text-muted small mb-0">Notifica al agente y al administrador cuando una tarea supera la fecha limite.</p>
+                        <a href="form.php?template=tarea_vencida" class="btn btn-sm btn-outline-primary mt-2">Usar plantilla</a>
                     </div>
                 </div>
             </div>

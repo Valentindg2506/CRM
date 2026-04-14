@@ -2,6 +2,7 @@
 $pageTitle = 'Nuevo Cliente';
 require_once __DIR__ . '/../../includes/header.php';
 require_once __DIR__ . '/../../includes/validators.php';
+require_once __DIR__ . '/../../includes/automatizaciones_engine.php';
 
 $db = getDB();
 $id = intval(get('id'));
@@ -81,6 +82,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $db->prepare("INSERT INTO clientes (`" . implode('`,`', $fields) . "`) VALUES ($placeholders)")->execute(array_values($data));
                 $id = $db->lastInsertId();
                 registrarActividad('crear', 'cliente', $id, $data['nombre']);
+
+                try {
+                    automatizacionesEjecutarTrigger('nuevo_cliente', [
+                        'entidad_tipo' => 'cliente',
+                        'entidad_id' => intval($id),
+                        'cliente_id' => intval($id),
+                        'agente_id' => intval($data['agente_id'] ?? 0),
+                        'actor_user_id' => intval(currentUserId()),
+                        'owner_user_id' => intval(currentUserId()),
+                    ]);
+                } catch (Throwable $e) {
+                    if (function_exists('logError')) {
+                        logError('Error trigger nuevo_cliente: ' . $e->getMessage());
+                    }
+                }
             }
             setFlash('success', $cliente ? 'Cliente actualizado.' : 'Cliente creado correctamente.');
             header('Location: ver.php?id=' . $id);

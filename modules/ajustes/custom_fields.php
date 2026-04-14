@@ -3,7 +3,13 @@ require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/helpers.php';
 if (session_status() === PHP_SESSION_NONE) session_start();
-requireAdmin();
+requireLogin();
+
+if (!in_array(currentUserRole(), ['admin', 'agente'], true)) {
+    setFlash('danger', 'No tienes permisos para acceder a esta seccion.');
+    header('Location: ' . APP_URL . '/index.php');
+    exit;
+}
 
 $db = getDB();
 

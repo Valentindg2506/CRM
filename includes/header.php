@@ -263,12 +263,6 @@ $allowedModulesForMenu = getAllowedModulesForCurrentUser();
             </a>
             <hr class="mx-3 my-2">
             <small class="sidebar-section-title">Comunicacion</small>
-            <a href="<?= APP_URL ?>/modules/conversaciones/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'conversaciones') !== false ? 'active' : '' ?>">
-                <i class="bi bi-chat-left-text"></i> Conversaciones
-            </a>
-            <a href="<?= APP_URL ?>/modules/inbox/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/inbox/') !== false ? 'active' : '' ?>">
-                <i class="bi bi-inboxes"></i> Bandeja Unificada
-            </a>
             <a href="<?= APP_URL ?>/modules/email/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/email/') !== false ? 'active' : '' ?>">
                 <i class="bi bi-envelope"></i> Email
             </a>
@@ -278,9 +272,6 @@ $allowedModulesForMenu = getAllowedModulesForCurrentUser();
             <a href="<?= APP_URL ?>/modules/sms/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/sms/') !== false ? 'active' : '' ?>">
                 <i class="bi bi-phone"></i> SMS
             </a>
-            <a href="<?= APP_URL ?>/modules/chat/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/chat/') !== false ? 'active' : '' ?>">
-                <i class="bi bi-chat-dots"></i> Chat Web
-            </a>
             <hr class="mx-3 my-2">
             <small class="sidebar-section-title">Contenido</small>
             <a href="<?= APP_URL ?>/modules/blog/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/blog/') !== false ? 'active' : '' ?>">
@@ -288,9 +279,6 @@ $allowedModulesForMenu = getAllowedModulesForCurrentUser();
             </a>
             <a href="<?= APP_URL ?>/modules/cursos/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/cursos/') !== false ? 'active' : '' ?>">
                 <i class="bi bi-mortarboard"></i> Cursos
-            </a>
-            <a href="<?= APP_URL ?>/modules/comunidad/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'comunidad') !== false ? 'active' : '' ?>">
-                <i class="bi bi-people-fill"></i> Comunidad
             </a>
             <a href="<?= APP_URL ?>/modules/medios/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/medios/') !== false ? 'active' : '' ?>">
                 <i class="bi bi-images"></i> Medios

@@ -8,34 +8,28 @@ require_once __DIR__ . '/../config/database.php';
 
 $db = getDB();
 
-// Obtener configuracion
-$config = $db->query("SELECT * FROM whatsapp_config WHERE activo = 1 LIMIT 1")->fetch();
-
 // GET: Verificacion del webhook
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    $mode = $_GET['hub_mode'] ?? '';
-    $token = $_GET['hub_verify_token'] ?? '';
-    $challenge = $_GET['hub_challenge'] ?? '';
+    $mode = $_GET['hub_mode'] ?? ($_GET['hub.mode'] ?? '');
+    $token = $_GET['hub_verify_token'] ?? ($_GET['hub.verify_token'] ?? '');
+    $challenge = $_GET['hub_challenge'] ?? ($_GET['hub.challenge'] ?? '');
+    $stmtVerify = $db->prepare("SELECT id FROM whatsapp_config WHERE webhook_verify_token = ? LIMIT 1");
+    $stmtVerify->execute([trim((string)$token)]);
+    $configVerify = $stmtVerify->fetch();
 
-    if ($mode === 'subscribe' && $config && $token === $config['webhook_verify_token']) {
-        http_response_code(200);
-        echo $challenge;
+    if (!$configVerify || $mode !== 'subscribe') {
+        http_response_code(400);
+        echo json_encode(['error' => 'Verificacion fallida']);
         exit;
     }
 
-    http_response_code(403);
-    echo json_encode(['error' => 'Verificacion fallida']);
+    http_response_code(200);
+    echo $challenge;
     exit;
 }
 
 // POST: Recibir mensajes
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!$config) {
-        http_response_code(200);
-        echo json_encode(['status' => 'ok', 'message' => 'Integracion no activa']);
-        exit;
-    }
-
     $input = file_get_contents('php://input');
     $secret = getEnvSecret('WHATSAPP_APP_SECRET', '');
     $signature = $_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '';
@@ -62,6 +56,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $changes = $entry['changes'] ?? [];
         foreach ($changes as $change) {
             $value = $change['value'] ?? [];
+            $metadata = $value['metadata'] ?? [];
+            $phoneNumberId = trim((string)($metadata['phone_number_id'] ?? ''));
+
+            $config = null;
+            if ($phoneNumberId !== '') {
+                $stmtConfig = $db->prepare("SELECT * FROM whatsapp_config WHERE activo = 1 AND phone_number_id = ? ORDER BY id DESC LIMIT 1");
+                $stmtConfig->execute([$phoneNumberId]);
+                $config = $stmtConfig->fetch();
+            }
+
+            if (!$config) {
+                continue;
+            }
+
+            $ownerUserId = isset($config['updated_by']) ? (int)$config['updated_by'] : 0;
+            if ($ownerUserId <= 0) {
+                continue;
+            }
+
             $messages = $value['messages'] ?? [];
             $contacts = $value['contacts'] ?? [];
 
@@ -107,8 +120,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 // Tambien verificar si ya hay mensajes previos vinculados con este telefono
                 if (!$clienteId) {
-                    $stmtPrev = $db->prepare("SELECT cliente_id FROM whatsapp_mensajes WHERE telefono = ? AND cliente_id IS NOT NULL LIMIT 1");
-                    $stmtPrev->execute([$from]);
+                    $stmtPrev = $db->prepare("SELECT cliente_id FROM whatsapp_mensajes WHERE telefono = ? AND created_by = ? AND cliente_id IS NOT NULL LIMIT 1");
+                    $stmtPrev->execute([$from, $ownerUserId]);
                     $prev = $stmtPrev->fetch();
                     if ($prev) {
                         $clienteId = $prev['cliente_id'];
@@ -118,9 +131,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Guardar mensaje
                 $stmt = $db->prepare("
                     INSERT INTO whatsapp_mensajes (cliente_id, telefono, direccion, mensaje, tipo, wa_message_id, estado, created_by, created_at)
-                    VALUES (?, ?, 'entrante', ?, ?, ?, 'recibido', NULL, FROM_UNIXTIME(?))
+                    VALUES (?, ?, 'entrante', ?, ?, ?, 'recibido', ?, FROM_UNIXTIME(?))
                 ");
-                $stmt->execute([$clienteId, $from, $contenido, $msgType, $waMessageId, $timestamp]);
+                $stmt->execute([$clienteId, $from, $contenido, $msgType, $waMessageId, $ownerUserId, $timestamp]);
             }
 
             // Procesar actualizaciones de estado
@@ -138,8 +151,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $nuevoEstado = $estadoMap[$statusValue] ?? null;
                 if ($nuevoEstado && !empty($waId)) {
-                    $stmtUpdate = $db->prepare("UPDATE whatsapp_mensajes SET estado = ? WHERE wa_message_id = ?");
-                    $stmtUpdate->execute([$nuevoEstado, $waId]);
+                    $stmtUpdate = $db->prepare("UPDATE whatsapp_mensajes SET estado = ? WHERE wa_message_id = ? AND created_by = ?");
+                    $stmtUpdate->execute([$nuevoEstado, $waId, $ownerUserId]);
                 }
             }
         }

@@ -402,7 +402,13 @@ render();
 
 <?php else:
     // List workflows
-    $workflows = $db->query("SELECT w.*, u.nombre as creador FROM workflows w LEFT JOIN usuarios u ON w.usuario_id = u.id ORDER BY w.updated_at DESC")->fetchAll();
+    if (isAdmin()) {
+        $workflows = $db->query("SELECT w.*, u.nombre as creador FROM workflows w LEFT JOIN usuarios u ON w.usuario_id = u.id ORDER BY w.updated_at DESC")->fetchAll();
+    } else {
+        $stmtWfList = $db->prepare("SELECT w.*, u.nombre as creador FROM workflows w LEFT JOIN usuarios u ON w.usuario_id = u.id WHERE w.usuario_id = ? ORDER BY w.updated_at DESC");
+        $stmtWfList->execute([intval(currentUserId())]);
+        $workflows = $stmtWfList->fetchAll();
+    }
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
