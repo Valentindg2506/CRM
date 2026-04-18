@@ -15,9 +15,35 @@ if (!$paso) {
     $pasoNum = $paso['orden'];
 }
 
-// Track visit
-$visitorId = $_COOKIE['funnel_visitor'] ?? bin2hex(random_bytes(16));
-if (!isset($_COOKIE['funnel_visitor'])) setcookie('funnel_visitor', $visitorId, time()+86400*30, '/');
+// Comprobar consentimiento de cookies
+$consentRaw  = $_COOKIE['cookie_consent'] ?? '';
+$consentData = $consentRaw ? json_decode($consentRaw, true) : null;
+$hasConsent  = !empty($consentData['analytics']);
+
+// Track visit — solo establecer cookie persistente si hay consentimiento
+if (session_status() === PHP_SESSION_NONE) session_start();
+$visitorId = $_COOKIE['funnel_visitor'] ?? ($_SESSION['funnel_visitor'] ?? bin2hex(random_bytes(16)));
+$_SESSION['funnel_visitor'] = $visitorId; // guardar siempre en sesión (cookie necesaria)
+if (!isset($_COOKIE['funnel_visitor']) && $hasConsent) {
+    setcookie('funnel_visitor', $visitorId, [
+        'expires'  => time() + 86400 * 30,
+        'path'     => '/',
+        'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+}
+// También persistir ref_code si venía de sesión y ahora hay consentimiento
+if ($hasConsent && empty($_COOKIE['ref_code']) && !empty($_SESSION['pending_ref_code'])) {
+    setcookie('ref_code', $_SESSION['pending_ref_code'], [
+        'expires'  => time() + 86400 * 30,
+        'path'     => '/',
+        'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+    unset($_SESSION['pending_ref_code']);
+}
 
 $db->prepare("UPDATE funnel_pasos SET visitas = visitas + 1 WHERE id=?")->execute([$paso['id']]);
 if ($pasoNum === 1) $db->prepare("UPDATE funnels SET visitas_total = visitas_total + 1 WHERE id=?")->execute([$funnelId]);
@@ -121,8 +147,47 @@ if (isset($_GET['converted'])) {
     <?php endif; ?>
 <?php endif; ?>
 
+<!-- Banner de consentimiento de cookies (RGPD/LSSI) -->
+<?php if (!$consentRaw): ?>
+<div id="cookie-banner" class="position-fixed bottom-0 start-0 end-0 shadow-lg" style="z-index:9999;background:#1e293b;color:#f1f5f9;padding:.9rem 0;">
+    <div class="container d-flex flex-column flex-md-row align-items-md-center gap-2">
+        <p class="mb-0 small flex-grow-1">
+            <i class="bi bi-cookie me-1" style="color:#fbbf24"></i>
+            Usamos cookies para analizar el recorrido del visitante en este funnel y atribuir correctamente las conversiones.
+            <a href="<?= defined('APP_URL') ? APP_URL : '' ?>/legal/cookies.php" target="_blank" style="color:#6ee7b7">Más información</a>.
+        </p>
+        <div class="d-flex gap-2 flex-shrink-0">
+            <button id="btn-rechazar" class="btn btn-sm btn-outline-light">Solo necesarias</button>
+            <button id="btn-aceptar" class="btn btn-sm" style="background:#10b981;color:#fff;border:none">Aceptar</button>
+        </div>
+    </div>
+</div>
+<script>
+(function(){
+    function setConsent(analytics){
+        var d={necessary:true,analytics:analytics,timestamp:new Date().toISOString(),version:'1.0'};
+        var exp=new Date(Date.now()+365*864e5).toUTCString();
+        var secure=location.protocol==='https:'?';Secure':'';
+        document.cookie='cookie_consent='+encodeURIComponent(JSON.stringify(d))+';expires='+exp+';path=/;SameSite=Lax'+secure;
+        // Registrar en servidor
+        fetch('<?= defined('APP_URL') ? APP_URL : '' ?>/api/cookie_consent.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).catch(function(){});
+        document.getElementById('cookie-banner').style.display='none';
+        // Si aceptó tracking y hay un ref_code pendiente en la URL, persistirlo
+        if(analytics){
+            var params=new URLSearchParams(location.search);
+            if(params.get('ref')){
+                fetch('<?= defined('APP_URL') ? APP_URL : '' ?>/ref.php?c='+encodeURIComponent(params.get('ref'))).catch(function(){});
+            }
+        }
+    }
+    document.getElementById('btn-aceptar').addEventListener('click',function(){setConsent(true);});
+    document.getElementById('btn-rechazar').addEventListener('click',function(){setConsent(false);});
+})();
+</script>
+<?php endif; ?>
+
 <!-- Progress bar -->
-<div class="fixed-bottom bg-white border-top p-2">
+<div class="fixed-bottom bg-white border-top p-2" style="z-index:<?= $consentRaw ? '100' : '9998' ?>">
     <div class="container">
         <div class="progress" style="height:6px">
             <div class="progress-bar bg-success" style="width:<?= $totalPasos > 0 ? round($pasoNum/$totalPasos*100) : 0 ?>%"></div>

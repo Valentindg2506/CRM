@@ -11,8 +11,22 @@ if (!$af) { header('Location: /'); exit; }
 $db->prepare("INSERT INTO afiliado_referidos (afiliado_id, ip) VALUES (?,?)")->execute([$af['id'], $_SERVER['REMOTE_ADDR']]);
 $db->prepare("UPDATE afiliados SET total_referidos=total_referidos+1 WHERE id=?")->execute([$af['id']]);
 
-// Set cookie
-setcookie('ref_code', $codigo, time()+86400*30, '/');
+// Guardar ref_code en sesión PHP (necesaria, no requiere consentimiento)
+if (session_status() === PHP_SESSION_NONE) session_start();
+$_SESSION['pending_ref_code'] = $codigo;
+
+// Solo establecer cookie persistente si el usuario ya dio consentimiento de tracking
+$consentRaw  = $_COOKIE['cookie_consent'] ?? '';
+$consentData = $consentRaw ? json_decode($consentRaw, true) : null;
+if (!empty($consentData['analytics'])) {
+    setcookie('ref_code', $codigo, [
+        'expires'  => time() + 86400 * 30,
+        'path'     => '/',
+        'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+}
 
 // Redirect to homepage or landing
 header('Location: ' . (defined('APP_URL') ? APP_URL : '/'));

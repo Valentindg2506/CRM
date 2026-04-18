@@ -9,20 +9,19 @@ require_once __DIR__ . '/../../includes/helpers.php';
 
 requireLogin();
 
-$db = getDB();
+$db     = getDB();
 $userId = (int) currentUserId();
 
-// Muy importante: liberar el lock de sesion para que el long-polling no bloquee
-// otras solicitudes del mismo usuario (abrir chat, enviar mensaje, etc.).
+// Liberar lock de sesión para no bloquear otras peticiones del mismo usuario
 if (session_status() === PHP_SESSION_ACTIVE) {
     session_write_close();
 }
 
 $telefonoActivo = trim((string)($_GET['telefono'] ?? ''));
-$busqueda = trim((string)($_GET['buscar'] ?? ''));
-$sinceId = max(0, (int)($_GET['since_id'] ?? 0));
-$waitSeconds = (int)($_GET['wait'] ?? 12);
-$waitSeconds = max(0, min(25, $waitSeconds));
+$busqueda       = trim((string)($_GET['buscar'] ?? ''));
+$sinceId        = max(0, (int)($_GET['since_id'] ?? 0));
+$waitSeconds    = (int)($_GET['wait'] ?? 12);
+$waitSeconds    = max(0, min(25, $waitSeconds));
 
 if ($waitSeconds > 0) {
     @set_time_limit($waitSeconds + 5);
@@ -34,17 +33,29 @@ function waPollCursor(PDO $db, int $userId, string $telefonoActivo): int {
         $stmt->execute([$userId, $telefonoActivo]);
         return (int)$stmt->fetchColumn();
     }
-
     $stmt = $db->prepare("SELECT COALESCE(MAX(id), 0) FROM whatsapp_mensajes WHERE created_by = ?");
     $stmt->execute([$userId]);
     return (int)$stmt->fetchColumn();
 }
 
 try {
+    // Long-polling: esperar hasta que haya mensajes nuevos.
+    // Libera la conexión MySQL durante los períodos de sleep para no agotar el pool.
+    // Con 50+ usuarios simultáneos, retener una conexión 25s mientras se hacen queries
+    // cada 750ms agota los slots disponibles. Aquí: conectar → query → desconectar →
+    // sleep 750ms → repetir. La conexión se mantiene <5ms por ciclo en lugar de 750ms.
     if ($waitSeconds > 0 && $sinceId > 0) {
+        // Liberar AMBAS referencias: la variable local $db y el cache global.
+        // Si solo se libera una, PHP mantiene el objeto PDO vivo (ref-counting).
+        $db = null;
+        releaseDB();
         $start = time();
         while (true) {
-            $cursorNow = waPollCursor($db, $userId, $telefonoActivo);
+            // getDB() abre una conexión efímera; releaseDB() la cierra tras la query.
+            // La PDO no se asigna a ninguna variable local → solo $GLOBALS['__db_pdo']
+            // la referencia → releaseDB() la libera de verdad.
+            $cursorNow = waPollCursor(getDB(), $userId, $telefonoActivo);
+            releaseDB();
             if ($cursorNow > $sinceId) {
                 break;
             }
@@ -53,17 +64,24 @@ try {
             }
             usleep(750000);
         }
+        $db = getDB(); // reconectar para las queries principales
     }
 
+    // ── Conversaciones ───────────────────────────────────────────────────────
+    // ANY_VALUE() evita fallo con ONLY_FULL_GROUP_BY en MySQL 5.7+
     $sqlConversaciones = "
         SELECT
             wm.telefono,
-            c.nombre as cliente_nombre,
-            c.apellidos as cliente_apellidos,
-            c.id as cliente_id,
-            MAX(wm.created_at) as ultimo_mensaje_fecha,
-            (SELECT wm2.mensaje FROM whatsapp_mensajes wm2 WHERE wm2.telefono = wm.telefono AND wm2.created_by = wm.created_by ORDER BY wm2.created_at DESC LIMIT 1) as ultimo_mensaje,
-            (SELECT COUNT(*) FROM whatsapp_mensajes wm3 WHERE wm3.telefono = wm.telefono AND wm3.created_by = wm.created_by AND wm3.direccion = 'entrante' AND wm3.estado = 'recibido') as no_leidos
+            MAX(c.nombre)    AS cliente_nombre,
+            MAX(c.apellidos) AS cliente_apellidos,
+            MAX(c.id)        AS cliente_id,
+            MAX(wm.created_at)     AS ultimo_mensaje_fecha,
+            (SELECT wm2.mensaje FROM whatsapp_mensajes wm2
+             WHERE wm2.telefono = wm.telefono AND wm2.created_by = wm.created_by
+             ORDER BY wm2.created_at DESC LIMIT 1) AS ultimo_mensaje,
+            (SELECT COUNT(*) FROM whatsapp_mensajes wm3
+             WHERE wm3.telefono = wm.telefono AND wm3.created_by = wm.created_by
+               AND wm3.direccion = 'entrante' AND wm3.estado = 'recibido') AS no_leidos
         FROM whatsapp_mensajes wm
         LEFT JOIN clientes c ON wm.cliente_id = c.id
     ";
@@ -76,20 +94,24 @@ try {
         $params[] = "%$busqueda%";
         $params[] = "%$busqueda%";
     }
-
     $sqlConversaciones .= " GROUP BY wm.telefono ORDER BY ultimo_mensaje_fecha DESC";
 
     $stmtConv = $db->prepare($sqlConversaciones);
     $stmtConv->execute($params);
     $conversaciones = $stmtConv->fetchAll(PDO::FETCH_ASSOC);
 
-    $mensajes = [];
-    $clienteChat = null;
+    // ── Mensajes del chat activo ─────────────────────────────────────────────
+    $mensajes        = [];
+    $clienteChat     = null;
     $latestMessageId = 0;
-    $cursorId = waPollCursor($db, $userId, $telefonoActivo);
+    $cursorId        = waPollCursor($db, $userId, $telefonoActivo);
 
     if ($telefonoActivo !== '') {
-        $stmtRead = $db->prepare("UPDATE whatsapp_mensajes SET estado = 'leido' WHERE telefono = ? AND created_by = ? AND direccion = 'entrante' AND estado = 'recibido'");
+        // Marcar entrantes como leídos
+        $stmtRead = $db->prepare("
+            UPDATE whatsapp_mensajes SET estado = 'leido'
+            WHERE telefono = ? AND created_by = ? AND direccion = 'entrante' AND estado = 'recibido'
+        ");
         $stmtRead->execute([$telefonoActivo, $userId]);
 
         $stmtMsg = $db->prepare("
@@ -102,7 +124,7 @@ try {
         $mensajes = $stmtMsg->fetchAll(PDO::FETCH_ASSOC);
 
         if (!empty($mensajes)) {
-            $last = end($mensajes);
+            $last            = end($mensajes);
             $latestMessageId = (int)($last['id'] ?? 0);
         }
 
@@ -118,22 +140,22 @@ try {
     }
 
     echo json_encode([
-        'success' => true,
-        'telefono_activo' => $telefonoActivo,
-        'conversaciones' => $conversaciones,
-        'mensajes' => $mensajes,
-        'cliente_chat' => $clienteChat,
+        'success'           => true,
+        'telefono_activo'   => $telefonoActivo,
+        'conversaciones'    => $conversaciones,
+        'mensajes'          => $mensajes,
+        'cliente_chat'      => $clienteChat,
         'latest_message_id' => $latestMessageId,
-        'cursor_id' => $cursorId,
+        'cursor_id'         => $cursorId,
     ], JSON_UNESCAPED_UNICODE);
+
 } catch (Throwable $e) {
     if (function_exists('logError')) {
         logError('WhatsApp polling error: ' . $e->getMessage());
     }
-
     http_response_code(500);
     echo json_encode([
         'success' => false,
-        'error' => 'Error interno al actualizar WhatsApp',
+        'error'   => 'Error interno al actualizar WhatsApp',
     ], JSON_UNESCAPED_UNICODE);
 }

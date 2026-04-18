@@ -30,6 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'direccion' => post('direccion') ?: null,
         'numero' => post('numero') ?: null,
         'piso_puerta' => post('piso_puerta') ?: null,
+        'escalera' => post('escalera') ?: null,
+        'puerta' => post('puerta') ?: null,
         'barrio' => post('barrio') ?: null,
         'localidad' => post('localidad') ?: null,
         'provincia' => post('provincia') ?: null,
@@ -307,9 +309,17 @@ $energeticas = ['A'=>'A','B'=>'B','C'=>'C','D'=>'D','E'=>'E','F'=>'F','G'=>'G','
                     <label class="form-label">Nº</label>
                     <input type="text" name="numero" class="form-control" value="<?= sanitize($p['numero'] ?? '') ?>">
                 </div>
-                <div class="col-md-2">
-                    <label class="form-label">Piso/Puerta</label>
-                    <input type="text" name="piso_puerta" class="form-control" value="<?= sanitize($p['piso_puerta'] ?? '') ?>">
+                <div class="col-md-1">
+                    <label class="form-label">Piso</label>
+                    <input type="text" name="piso_puerta" class="form-control" placeholder="2º" value="<?= sanitize($p['piso_puerta'] ?? '') ?>">
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label">Escalera</label>
+                    <input type="text" name="escalera" class="form-control" placeholder="A" value="<?= sanitize($p['escalera'] ?? '') ?>">
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label">Puerta</label>
+                    <input type="text" name="puerta" class="form-control" placeholder="1" value="<?= sanitize($p['puerta'] ?? '') ?>">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Barrio / Zona</label>
@@ -491,5 +501,40 @@ $energeticas = ['A'=>'A','B'=>'B','C'=>'C','D'=>'D','E'=>'E','F'=>'F','G'=>'G','
         <a href="index.php" class="btn btn-outline-secondary btn-lg">Cancelar</a>
     </div>
 </form>
+
+<script>
+(function() {
+    const excludeId = <?= $id ?: 0 ?>;
+    const excludeTipo = 'prospecto';
+
+    function checkDuplicate(input, campo) {
+        const valor = input.value.trim();
+        let warnEl = input.parentElement.querySelector('.dup-warn');
+        if (!warnEl) {
+            warnEl = document.createElement('div');
+            warnEl.className = 'dup-warn text-danger small mt-1';
+            input.parentElement.appendChild(warnEl);
+        }
+        warnEl.textContent = '';
+        if (!valor) return;
+
+        fetch(`../../api/check_duplicate.php?campo=${encodeURIComponent(campo)}&valor=${encodeURIComponent(valor)}&exclude_id=${excludeId}&exclude_tipo=${excludeTipo}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.matches && data.matches.length > 0) {
+                    const names = data.matches.map(m => `${m.tipo}: ${m.nombre}${m.referencia ? ' (' + m.referencia + ')' : ''}`).join(', ');
+                    warnEl.textContent = `⚠ Ya existe con este dato: ${names}`;
+                }
+            })
+            .catch(() => {});
+    }
+
+    document.querySelectorAll('input[name="telefono"], input[name="telefono2"]').forEach(el => {
+        el.addEventListener('blur', () => checkDuplicate(el, 'telefono'));
+    });
+    const emailEl = document.querySelector('input[name="email"]');
+    if (emailEl) emailEl.addEventListener('blur', () => checkDuplicate(emailEl, 'email'));
+})();
+</script>
 
 <?php require_once __DIR__ . '/../../includes/footer.php'; ?>

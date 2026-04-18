@@ -1,5 +1,13 @@
 <?php
 require_once __DIR__ . '/config/database.php';
+
+// Sesión pública para token CSRF (no requiere login)
+if (session_status() === PHP_SESSION_NONE) {
+    session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax',
+        'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off']);
+    session_start();
+}
+
 $db = getDB();
 
 $id = intval($_GET['id'] ?? 0);
@@ -10,7 +18,25 @@ $form = $stmt->fetch(PDO::FETCH_ASSOC);
 $mensaje = '';
 $tipoMsg = '';
 
+// Generar token CSRF de un solo uso por sesión + formulario
+$csrfKey = 'csrf_form_' . $id;
+if (empty($_SESSION[$csrfKey])) {
+    $_SESSION[$csrfKey] = bin2hex(random_bytes(32));
+}
+$csrfToken = $_SESSION[$csrfKey];
+
 if ($form && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Verificar CSRF antes de cualquier procesamiento
+    $providedToken = $_POST['_csrf'] ?? '';
+    if (!hash_equals($csrfToken, $providedToken)) {
+        $mensaje = 'Solicitud inválida. Recarga la página e inténtalo de nuevo.';
+        $tipoMsg = 'danger';
+        goto render;
+    }
+    // Rotar token tras uso válido
+    $_SESSION[$csrfKey] = bin2hex(random_bytes(32));
+    $csrfToken = $_SESSION[$csrfKey];
+
     $campos = json_decode($form['campos'], true) ?: [];
     $ip = $_SERVER['REMOTE_ADDR'] ?? '';
 
@@ -33,6 +59,11 @@ if ($form && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errores[] = $key . ' no es un email valido.';
             }
             $datos[$key] = $campo['type'] === 'checkbox' ? (!empty($val) ? 'Si' : 'No') : $val;
+        }
+
+        // Validar consentimiento RGPD obligatorio
+        if (empty($_POST['consentimiento_rgpd'])) {
+            $errores[] = 'Debes aceptar la Política de Privacidad para enviar el formulario.';
         }
 
         if (!empty($errores)) {
@@ -58,8 +89,15 @@ if ($form && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $stmtIns = $db->prepare("INSERT INTO formulario_envios (formulario_id, datos, ip, user_agent, cliente_id) VALUES (?, ?, ?, ?, ?)");
-            $stmtIns->execute([$id, json_encode($datos), $ip, $_SERVER['HTTP_USER_AGENT'] ?? '', $clienteId]);
+            // Asegurar columnas de consentimiento RGPD (auto-migración silenciosa)
+            try {
+                $db->exec("ALTER TABLE formulario_envios ADD COLUMN IF NOT EXISTS consentimiento_rgpd TINYINT(1) NOT NULL DEFAULT 0");
+                $db->exec("ALTER TABLE formulario_envios ADD COLUMN IF NOT EXISTS consentimiento_at DATETIME NULL");
+                $db->exec("ALTER TABLE formulario_envios ADD COLUMN IF NOT EXISTS consentimiento_ip VARCHAR(45) NULL");
+            } catch (Throwable $e) {}
+
+            $stmtIns = $db->prepare("INSERT INTO formulario_envios (formulario_id, datos, ip, user_agent, cliente_id, consentimiento_rgpd, consentimiento_at, consentimiento_ip) VALUES (?, ?, ?, ?, ?, 1, NOW(), ?)");
+            $stmtIns->execute([$id, json_encode($datos), $ip, $_SERVER['HTTP_USER_AGENT'] ?? '', $clienteId, $ip]);
 
             if (!empty($form['redirect_url'])) {
                 header('Location: ' . $form['redirect_url']);
@@ -95,7 +133,7 @@ $campos = $form ? (json_decode($form['campos'], true) ?: []) : [];
     </style>
 </head>
 <body>
-<?php if (!$form): ?>
+<?php render: if (!$form): ?>
     <div class="text-center">
         <i class="bi bi-exclamation-circle" style="font-size:3rem;color:#94a3b8"></i>
         <h4 class="mt-3 text-muted">Formulario no disponible</h4>
@@ -118,6 +156,7 @@ $campos = $form ? (json_decode($form['campos'], true) ?: []) : [];
 
             <?php if ($tipoMsg !== 'success'): ?>
             <form method="POST">
+                <input type="hidden" name="_csrf" value="<?= htmlspecialchars($csrfToken) ?>">
                 <?php foreach ($campos as $c): ?>
                 <div class="mb-3">
                     <label class="form-label fw-medium">
@@ -145,6 +184,26 @@ $campos = $form ? (json_decode($form['campos'], true) ?: []) : [];
                     <?php endif; ?>
                 </div>
                 <?php endforeach; ?>
+                <!-- Consentimiento RGPD — obligatorio (Art. 13 RGPD / LOPDGDD) -->
+                <div class="mt-4 p-3 rounded" style="background:#f8fafc;border:1px solid #e2e8f0;font-size:.85rem;color:#64748b">
+                    <p class="mb-2">
+                        <strong>Información sobre protección de datos:</strong>
+                        Los datos facilitados serán tratados por el responsable de este formulario con la finalidad de
+                        gestionar tu solicitud. Tus datos no serán cedidos a terceros salvo obligación legal.
+                        Puedes ejercer tus derechos de acceso, rectificación, supresión y demás
+                        contactando con el responsable del tratamiento.
+                    </p>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="consentimiento_rgpd"
+                               id="consentimientoRgpd" value="1" required
+                               <?= !empty($_POST['consentimiento_rgpd']) ? 'checked' : '' ?>>
+                        <label class="form-check-label fw-medium" for="consentimientoRgpd" style="color:#374151">
+                            He leído y acepto el tratamiento de mis datos personales según la
+                            <a href="<?= defined('APP_URL') ? APP_URL : '' ?>/legal/privacidad.php"
+                               target="_blank" style="color:var(--color-primary)">Política de Privacidad</a>. *
+                        </label>
+                    </div>
+                </div>
                 <div class="text-center mt-4">
                     <button type="submit" class="btn btn-submit btn-lg"><?= htmlspecialchars($form['texto_boton']) ?></button>
                 </div>

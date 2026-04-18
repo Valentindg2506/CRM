@@ -8,163 +8,392 @@ $db = getDB();
 $mes = intval(get('mes', date('n')));
 $anio = intval(get('anio', date('Y')));
 
-// Validar rango
 if ($mes < 1 || $mes > 12) $mes = date('n');
 if ($anio < 2020 || $anio > 2040) $anio = date('Y');
 
-// Navegacion de meses
-$mesPrev = $mes - 1;
-$anioPrev = $anio;
+// Navegacion
+$mesPrev = $mes - 1; $anioPrev = $anio;
 if ($mesPrev < 1) { $mesPrev = 12; $anioPrev--; }
-$mesNext = $mes + 1;
-$anioNext = $anio;
+$mesNext = $mes + 1; $anioNext = $anio;
 if ($mesNext > 12) { $mesNext = 1; $anioNext++; }
 
-// Datos del mes
-$primerDia = mktime(0, 0, 0, $mes, 1, $anio);
-$diasEnMes = date('t', $primerDia);
-$diaSemanaInicio = date('N', $primerDia); // 1=lunes, 7=domingo
+$primerDia      = mktime(0, 0, 0, $mes, 1, $anio);
+$diasEnMes      = (int)date('t', $primerDia);
+$diaSemanaInicio = (int)date('N', $primerDia); // 1=lun, 7=dom
 $nombreMes = [
-    1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril',
-    5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto',
-    9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'
+    1=>'Enero',2=>'Febrero',3=>'Marzo',4=>'Abril',5=>'Mayo',6=>'Junio',
+    7=>'Julio',8=>'Agosto',9=>'Septiembre',10=>'Octubre',11=>'Noviembre',12=>'Diciembre'
 ][$mes];
 
-// Obtener eventos del mes
-$fechaInicio = "$anio-" . str_pad($mes, 2, '0', STR_PAD_LEFT) . "-01 00:00:00";
-$fechaFin = "$anio-" . str_pad($mes, 2, '0', STR_PAD_LEFT) . "-$diasEnMes 23:59:59";
+$mesStr  = str_pad($mes, 2, '0', STR_PAD_LEFT);
+$fechaMesInicio = "$anio-$mesStr-01";
+$fechaMesFin    = "$anio-$mesStr-$diasEnMes";
 
-$stmt = $db->prepare("
-    SELECT ce.*, c.nombre as cliente_nombre, c.apellidos as cliente_apellidos,
-           p.titulo as propiedad_titulo, p.referencia as propiedad_ref
-    FROM calendario_eventos ce
-    LEFT JOIN clientes c ON ce.cliente_id = c.id
-    LEFT JOIN propiedades p ON ce.propiedad_id = p.id
-    WHERE ce.usuario_id = ? AND ce.fecha_inicio <= ? AND ce.fecha_fin >= ?
-    ORDER BY ce.fecha_inicio ASC
-");
-$stmt->execute([currentUserId(), $fechaFin, $fechaInicio]);
-$eventos = $stmt->fetchAll();
+$uid = currentUserId();
+$esAdmin = isAdmin();
 
-// También obtener visitas del módulo de visitas para mostrarlas en el calendario
-$stmtVisitasCal = $db->prepare("
-    SELECT v.id, v.fecha, v.hora, v.estado as visita_estado,
-           CONCAT('Visita: ', p.referencia, ' - ', c.nombre) as titulo,
-           'visita' as tipo, '#10b981' as color, 0 as todo_dia,
-           c.nombre as cliente_nombre, c.apellidos as cliente_apellidos,
-           p.titulo as propiedad_titulo, p.referencia as propiedad_ref,
-           v.cliente_id, v.propiedad_id
-    FROM visitas v
-    LEFT JOIN clientes c ON v.cliente_id = c.id
-    LEFT JOIN propiedades p ON v.propiedad_id = p.id
-    WHERE v.agente_id = ?
-      AND v.fecha >= ? AND v.fecha <= ?
-    ORDER BY v.fecha, v.hora ASC
-");
-$stmtVisitasCal->execute([currentUserId(), "$anio-" . str_pad($mes, 2, '0', STR_PAD_LEFT) . "-01", "$anio-" . str_pad($mes, 2, '0', STR_PAD_LEFT) . "-$diasEnMes"]);
-$visitas = $stmtVisitasCal->fetchAll();
+// ─────────────────────────────────────────────────────
+// Recolectar todos los eventos del mes en $eventos[]
+// Cada evento DEBE tener: titulo, tipo, color,
+//   fecha_inicio (Y-m-d H:i:s), fecha_fin, link
+// ─────────────────────────────────────────────────────
+$eventos = [];
 
-// Convertir visitas al formato de eventos
-foreach ($visitas as $v) {
-    $v['fecha_inicio'] = $v['fecha'] . ' ' . ($v['hora'] ?? '09:00:00');
-    $v['fecha_fin'] = $v['fecha'] . ' ' . ($v['hora'] ? date('H:i:s', strtotime($v['hora'] . ' +1 hour')) : '10:00:00');
-    $eventos[] = $v;
-}
+// 1. Eventos de calendario propios
+try {
+    $stmt = $db->prepare("
+        SELECT ce.id, ce.titulo, ce.tipo,
+               COALESCE(ce.color,'#3b82f6') as color,
+               ce.todo_dia, ce.fecha_inicio, ce.fecha_fin,
+               c.nombre as cliente_nombre, c.apellidos as cliente_apellidos,
+               p.titulo as propiedad_titulo
+        FROM calendario_eventos ce
+        LEFT JOIN clientes c ON ce.cliente_id = c.id
+        LEFT JOIN propiedades p ON ce.propiedad_id = p.id
+        WHERE ce.usuario_id = ?
+          AND ce.fecha_inicio <= ? AND ce.fecha_fin >= ?
+        ORDER BY ce.fecha_inicio ASC
+    ");
+    $stmt->execute([$uid, "$fechaMesFin 23:59:59", "$fechaMesInicio 00:00:00"]);
+    foreach ($stmt->fetchAll() as $r) {
+        $r['link'] = 'form.php?id=' . $r['id'];
+        $r['fuente'] = 'calendario';
+        $eventos[] = $r;
+    }
+} catch (Exception $e) { /* continúa sin este bloque */ }
 
-// También obtener tareas con fecha de vencimiento
-$stmtTareasCal = $db->prepare("
-    SELECT t.id, DATE(t.fecha_vencimiento) as fecha, TIME(t.fecha_vencimiento) as hora,
-           t.estado as tarea_estado, t.prioridad,
-           CONCAT('Tarea: ', t.titulo) as titulo,
-           'tarea' as tipo,
-           CASE t.prioridad WHEN 'urgente' THEN '#ef4444' WHEN 'alta' THEN '#f59e0b' ELSE '#8b5cf6' END as color,
-           0 as todo_dia,
-           c.nombre as cliente_nombre, c.apellidos as cliente_apellidos,
-           p.titulo as propiedad_titulo, p.referencia as propiedad_ref,
-           t.cliente_id, t.propiedad_id
-    FROM tareas t
-    LEFT JOIN clientes c ON t.cliente_id = c.id
-    LEFT JOIN propiedades p ON t.propiedad_id = p.id
-    WHERE (t.asignado_a = ? OR t.creado_por = ?)
-      AND t.estado IN ('pendiente','en_progreso')
-      AND DATE(t.fecha_vencimiento) >= ? AND DATE(t.fecha_vencimiento) <= ?
-    ORDER BY t.fecha_vencimiento ASC
-");
-$stmtTareasCal->execute([currentUserId(), currentUserId(), "$anio-" . str_pad($mes, 2, '0', STR_PAD_LEFT) . "-01", "$anio-" . str_pad($mes, 2, '0', STR_PAD_LEFT) . "-$diasEnMes"]);
-$tareasCal = $stmtTareasCal->fetchAll();
+// 2. Visitas del mes
+try {
+    $stmt = $db->prepare("
+        SELECT v.id, v.fecha, v.hora,
+               CONCAT('Visita: ', COALESCE(c.nombre,'Sin cliente'),
+                      IF(p.referencia IS NOT NULL, CONCAT(' — ', p.referencia), '')) as titulo,
+               'visita' as tipo, '#10b981' as color, 0 as todo_dia,
+               c.nombre as cliente_nombre, c.apellidos as cliente_apellidos,
+               p.titulo as propiedad_titulo
+        FROM visitas v
+        LEFT JOIN clientes c ON v.cliente_id = c.id
+        LEFT JOIN propiedades p ON v.propiedad_id = p.id
+        WHERE v.agente_id = ? AND v.fecha >= ? AND v.fecha <= ?
+        ORDER BY v.fecha ASC, v.hora ASC
+    ");
+    $stmt->execute([$uid, $fechaMesInicio, $fechaMesFin]);
+    foreach ($stmt->fetchAll() as $r) {
+        $horaStr  = !empty($r['hora']) ? $r['hora'] : '09:00:00';
+        $horaFin  = date('H:i:s', strtotime($horaStr . ' +1 hour'));
+        $r['fecha_inicio'] = $r['fecha'] . ' ' . $horaStr;
+        $r['fecha_fin']    = $r['fecha'] . ' ' . $horaFin;
+        $r['todo_dia']     = 0;
+        $r['link']         = '../visitas/form.php?id=' . $r['id'];
+        $r['fuente']       = 'visita';
+        $eventos[] = $r;
+    }
+} catch (Exception $e) { /* continúa */ }
 
-foreach ($tareasCal as $t) {
-    $t['fecha_inicio'] = $t['fecha'] . ' ' . ($t['hora'] ?? '09:00:00');
-    $t['fecha_fin'] = $t['fecha'] . ' ' . ($t['hora'] ? date('H:i:s', strtotime($t['hora'] . ' +1 hour')) : '10:00:00');
-    $eventos[] = $t;
-}
+// 3. Tareas con vencimiento en el mes
+try {
+    $stmt = $db->prepare("
+        SELECT t.id, t.titulo as titulo_raw, t.prioridad, t.estado as tarea_estado,
+               t.fecha_vencimiento,
+               CASE t.prioridad
+                   WHEN 'urgente' THEN '#ef4444'
+                   WHEN 'alta'    THEN '#f59e0b'
+                   ELSE '#8b5cf6'
+               END as color,
+               c.nombre as cliente_nombre, c.apellidos as cliente_apellidos,
+               p.titulo as propiedad_titulo
+        FROM tareas t
+        LEFT JOIN clientes c ON t.cliente_id = c.id
+        LEFT JOIN propiedades p ON t.propiedad_id = p.id
+        WHERE (t.asignado_a = ? OR t.creado_por = ?)
+          AND t.estado IN ('pendiente','en_progreso')
+          AND DATE(t.fecha_vencimiento) >= ? AND DATE(t.fecha_vencimiento) <= ?
+        ORDER BY t.fecha_vencimiento ASC
+    ");
+    $stmt->execute([$uid, $uid, $fechaMesInicio, $fechaMesFin]);
+    foreach ($stmt->fetchAll() as $r) {
+        $fv = $r['fecha_vencimiento'];
+        $r['titulo']       = 'Tarea: ' . $r['titulo_raw'];
+        $r['tipo']         = 'tarea';
+        $r['todo_dia']     = 0;
+        $r['fecha_inicio'] = $fv;
+        $r['fecha_fin']    = date('Y-m-d H:i:s', strtotime($fv . ' +1 hour'));
+        $r['link']         = '../tareas/form.php?id=' . $r['id'];
+        $r['fuente']       = 'tarea';
+        $eventos[] = $r;
+    }
+} catch (Exception $e) { /* continúa */ }
 
-// Prospectos con fecha de próximo contacto
-$stmtProspCal = $db->prepare("
-    SELECT p.id, p.fecha_proximo_contacto as fecha, '09:00:00' as hora,
-           CONCAT('Contactar: ', p.nombre) as titulo,
-           'llamada' as tipo, '#f59e0b' as color, 0 as todo_dia,
-           NULL as cliente_nombre, NULL as cliente_apellidos,
-           NULL as propiedad_titulo, NULL as propiedad_ref,
-           NULL as cliente_id, NULL as propiedad_id
-    FROM prospectos p
-    WHERE p.agente_id = ?
-      AND p.activo = 1 AND p.etapa NOT IN ('captado','descartado')
-      AND p.fecha_proximo_contacto >= ? AND p.fecha_proximo_contacto <= ?
-    ORDER BY p.fecha_proximo_contacto ASC
-");
-$stmtProspCal->execute([currentUserId(), "$anio-" . str_pad($mes, 2, '0', STR_PAD_LEFT) . "-01", "$anio-" . str_pad($mes, 2, '0', STR_PAD_LEFT) . "-$diasEnMes"]);
-$prospCal = $stmtProspCal->fetchAll();
+// 4. Prospectos: próximo contacto en el mes
+try {
+    // Admins ven todos; agentes solo los suyos
+    $whereAgente = $esAdmin ? '' : 'AND p.agente_id = ?';
+    $params = $esAdmin
+        ? [$fechaMesInicio, $fechaMesFin]
+        : [$uid, $fechaMesInicio, $fechaMesFin];
+    $stmt = $db->prepare("
+        SELECT p.id, p.nombre, p.fecha_proximo_contacto as fecha,
+               u.nombre as agente_nombre
+        FROM prospectos p
+        LEFT JOIN usuarios u ON p.agente_id = u.id
+        WHERE p.activo = 1
+          AND p.etapa NOT IN ('captado','descartado')
+          AND p.fecha_proximo_contacto >= ?
+          AND p.fecha_proximo_contacto <= ?
+          $whereAgente
+        ORDER BY p.fecha_proximo_contacto ASC
+    ");
+    $stmt->execute($params);
+    foreach ($stmt->fetchAll() as $r) {
+        $label = $esAdmin && !empty($r['agente_nombre'])
+            ? 'Contactar: ' . $r['nombre'] . ' (' . $r['agente_nombre'] . ')'
+            : 'Contactar: ' . $r['nombre'];
+        $eventos[] = [
+            'id'              => $r['id'],
+            'titulo'          => $label,
+            'tipo'            => 'llamada',
+            'color'           => '#f59e0b',
+            'todo_dia'        => 0,
+            'fecha_inicio'    => $r['fecha'] . ' 09:00:00',
+            'fecha_fin'       => $r['fecha'] . ' 09:30:00',
+            'cliente_nombre'  => null,
+            'cliente_apellidos'=> null,
+            'propiedad_titulo'=> null,
+            'link'            => '../prospectos/ver.php?id=' . $r['id'],
+            'fuente'          => 'prospecto',
+        ];
+    }
+} catch (Exception $e) { /* continúa */ }
 
-foreach ($prospCal as $pc) {
-    $pc['fecha_inicio'] = $pc['fecha'] . ' 09:00:00';
-    $pc['fecha_fin'] = $pc['fecha'] . ' 09:30:00';
-    $eventos[] = $pc;
-}
-
-// Organizar eventos por dia
+// ─────────────────────────────────────────────────────
+// Organizar por día
+// ─────────────────────────────────────────────────────
 $eventosPorDia = [];
 foreach ($eventos as $evento) {
-    $diaInicio = max(1, intval(date('j', strtotime($evento['fecha_inicio']))));
-    $diaFin = min($diasEnMes, intval(date('j', strtotime($evento['fecha_fin']))));
-    // Si el evento empieza en otro mes
-    if (date('n', strtotime($evento['fecha_inicio'])) != $mes) $diaInicio = 1;
-    if (date('n', strtotime($evento['fecha_fin'])) != $mes) $diaFin = $diasEnMes;
-    for ($d = $diaInicio; $d <= $diaFin; $d++) {
+    $tsIni = strtotime($evento['fecha_inicio']);
+    $tsFin = strtotime($evento['fecha_fin']);
+    if (!$tsIni) continue;
+    $dIni = max(1, (int)date('j', $tsIni));
+    $dFin = min($diasEnMes, (int)date('j', $tsFin ?: $tsIni));
+    if ((int)date('n', $tsIni) != $mes) $dIni = 1;
+    if ($tsFin && (int)date('n', $tsFin) != $mes) $dFin = $diasEnMes;
+    for ($d = $dIni; $d <= $dFin; $d++) {
         $eventosPorDia[$d][] = $evento;
     }
 }
 
-// Eventos de hoy para panel lateral
+// ─────────────────────────────────────────────────────
+// Panel lateral: eventos de HOY (todos los tipos)
+// ─────────────────────────────────────────────────────
 $hoy = date('Y-m-d');
-$stmtHoy = $db->prepare("
-    SELECT ce.*, c.nombre as cliente_nombre, c.apellidos as cliente_apellidos,
-           p.titulo as propiedad_titulo
-    FROM calendario_eventos ce
-    LEFT JOIN clientes c ON ce.cliente_id = c.id
-    LEFT JOIN propiedades p ON ce.propiedad_id = p.id
-    WHERE ce.usuario_id = ? AND DATE(ce.fecha_inicio) = ?
-    ORDER BY ce.fecha_inicio ASC
-");
-$stmtHoy->execute([currentUserId(), $hoy]);
-$eventosHoy = $stmtHoy->fetchAll();
+$eventosHoy = [];
 
+try {
+    $stmt = $db->prepare("
+        SELECT ce.id, ce.titulo, ce.tipo, COALESCE(ce.color,'#3b82f6') as color,
+               ce.todo_dia, ce.fecha_inicio, ce.fecha_fin,
+               c.nombre as cliente_nombre, c.apellidos as cliente_apellidos
+        FROM calendario_eventos ce
+        LEFT JOIN clientes c ON ce.cliente_id = c.id
+        WHERE ce.usuario_id = ? AND DATE(ce.fecha_inicio) = ?
+        ORDER BY ce.fecha_inicio ASC
+    ");
+    $stmt->execute([$uid, $hoy]);
+    foreach ($stmt->fetchAll() as $r) {
+        $r['link'] = 'form.php?id=' . $r['id'];
+        $eventosHoy[] = $r;
+    }
+} catch (Exception $e) {}
+
+try {
+    $stmt = $db->prepare("
+        SELECT v.id, v.hora,
+               CONCAT('Visita: ', COALESCE(c.nombre,'Sin cliente'),
+                      IF(p.referencia IS NOT NULL, CONCAT(' — ', p.referencia), '')) as titulo,
+               c.nombre as cliente_nombre, c.apellidos as cliente_apellidos
+        FROM visitas v
+        LEFT JOIN clientes c ON v.cliente_id = c.id
+        LEFT JOIN propiedades p ON v.propiedad_id = p.id
+        WHERE v.agente_id = ? AND v.fecha = ?
+        ORDER BY v.hora ASC
+    ");
+    $stmt->execute([$uid, $hoy]);
+    foreach ($stmt->fetchAll() as $r) {
+        $horaStr = !empty($r['hora']) ? $r['hora'] : '09:00:00';
+        $eventosHoy[] = [
+            'id'              => $r['id'],
+            'titulo'          => $r['titulo'],
+            'tipo'            => 'visita',
+            'color'           => '#10b981',
+            'todo_dia'        => 0,
+            'fecha_inicio'    => $hoy . ' ' . $horaStr,
+            'fecha_fin'       => $hoy . ' ' . date('H:i:s', strtotime($horaStr . ' +1 hour')),
+            'cliente_nombre'  => $r['cliente_nombre'],
+            'cliente_apellidos'=> $r['cliente_apellidos'],
+            'link'            => '../visitas/form.php?id=' . $r['id'],
+        ];
+    }
+} catch (Exception $e) {}
+
+try {
+    $stmt = $db->prepare("
+        SELECT t.id, t.titulo as titulo_raw, t.fecha_vencimiento,
+               CASE t.prioridad WHEN 'urgente' THEN '#ef4444' WHEN 'alta' THEN '#f59e0b' ELSE '#8b5cf6' END as color,
+               c.nombre as cliente_nombre, c.apellidos as cliente_apellidos
+        FROM tareas t
+        LEFT JOIN clientes c ON t.cliente_id = c.id
+        WHERE (t.asignado_a = ? OR t.creado_por = ?)
+          AND t.estado IN ('pendiente','en_progreso')
+          AND DATE(t.fecha_vencimiento) = ?
+        ORDER BY t.fecha_vencimiento ASC
+    ");
+    $stmt->execute([$uid, $uid, $hoy]);
+    foreach ($stmt->fetchAll() as $r) {
+        $eventosHoy[] = [
+            'id'              => $r['id'],
+            'titulo'          => 'Tarea: ' . $r['titulo_raw'],
+            'tipo'            => 'tarea',
+            'color'           => $r['color'],
+            'todo_dia'        => 0,
+            'fecha_inicio'    => $r['fecha_vencimiento'],
+            'fecha_fin'       => date('Y-m-d H:i:s', strtotime($r['fecha_vencimiento'] . ' +1 hour')),
+            'cliente_nombre'  => $r['cliente_nombre'],
+            'cliente_apellidos'=> $r['cliente_apellidos'],
+            'link'            => '../tareas/form.php?id=' . $r['id'],
+        ];
+    }
+} catch (Exception $e) {}
+
+try {
+    $whereAgenteHoy = $esAdmin ? '' : 'AND p.agente_id = ?';
+    $paramsHoy = $esAdmin ? [$hoy] : [$uid, $hoy];
+    $stmt = $db->prepare("
+        SELECT p.id, p.nombre FROM prospectos p
+        WHERE p.activo = 1 AND p.etapa NOT IN ('captado','descartado')
+          AND p.fecha_proximo_contacto = ?
+          $whereAgenteHoy
+    ");
+    $stmt->execute($paramsHoy);
+    foreach ($stmt->fetchAll() as $r) {
+        $eventosHoy[] = [
+            'id'              => $r['id'],
+            'titulo'          => 'Contactar: ' . $r['nombre'],
+            'tipo'            => 'llamada',
+            'color'           => '#f59e0b',
+            'todo_dia'        => 0,
+            'fecha_inicio'    => $hoy . ' 09:00:00',
+            'fecha_fin'       => $hoy . ' 09:30:00',
+            'cliente_nombre'  => null,
+            'cliente_apellidos'=> null,
+            'link'            => '../prospectos/ver.php?id=' . $r['id'],
+        ];
+    }
+} catch (Exception $e) {}
+
+usort($eventosHoy, fn($a, $b) => strcmp($a['fecha_inicio'], $b['fecha_inicio']));
+
+// ─────────────────────────────────────────────────────
+// Panel lateral: PRÓXIMOS eventos (todos los tipos)
+// ─────────────────────────────────────────────────────
+$proximos = [];
+
+try {
+    $stmt = $db->prepare("
+        SELECT ce.id, ce.titulo, ce.tipo, COALESCE(ce.color,'#3b82f6') as color, ce.fecha_inicio
+        FROM calendario_eventos ce
+        WHERE ce.usuario_id = ? AND ce.fecha_inicio > NOW()
+        ORDER BY ce.fecha_inicio ASC LIMIT 5
+    ");
+    $stmt->execute([$uid]);
+    foreach ($stmt->fetchAll() as $r) {
+        $r['link'] = 'form.php?id=' . $r['id'];
+        $proximos[] = $r;
+    }
+} catch (Exception $e) {}
+
+try {
+    $stmt = $db->prepare("
+        SELECT v.id, v.fecha, v.hora,
+               CONCAT('Visita: ', COALESCE(c.nombre,'Sin cliente'),
+                      IF(p.referencia IS NOT NULL, CONCAT(' — ', p.referencia), '')) as titulo
+        FROM visitas v
+        LEFT JOIN clientes c ON v.cliente_id = c.id
+        LEFT JOIN propiedades p ON v.propiedad_id = p.id
+        WHERE v.agente_id = ? AND v.fecha >= ?
+        ORDER BY v.fecha ASC, v.hora ASC LIMIT 4
+    ");
+    $stmt->execute([$uid, $hoy]);
+    foreach ($stmt->fetchAll() as $r) {
+        $horaStr = !empty($r['hora']) ? $r['hora'] : '09:00:00';
+        $proximos[] = [
+            'id'          => $r['id'],
+            'titulo'      => $r['titulo'],
+            'tipo'        => 'visita',
+            'color'       => '#10b981',
+            'fecha_inicio'=> $r['fecha'] . ' ' . $horaStr,
+            'link'        => '../visitas/form.php?id=' . $r['id'],
+        ];
+    }
+} catch (Exception $e) {}
+
+try {
+    $stmt = $db->prepare("
+        SELECT t.id, t.titulo as titulo_raw, t.fecha_vencimiento,
+               CASE t.prioridad WHEN 'urgente' THEN '#ef4444' WHEN 'alta' THEN '#f59e0b' ELSE '#8b5cf6' END as color
+        FROM tareas t
+        WHERE (t.asignado_a = ? OR t.creado_por = ?)
+          AND t.estado IN ('pendiente','en_progreso')
+          AND t.fecha_vencimiento > NOW()
+        ORDER BY t.fecha_vencimiento ASC LIMIT 4
+    ");
+    $stmt->execute([$uid, $uid]);
+    foreach ($stmt->fetchAll() as $r) {
+        $proximos[] = [
+            'id'          => $r['id'],
+            'titulo'      => 'Tarea: ' . $r['titulo_raw'],
+            'tipo'        => 'tarea',
+            'color'       => $r['color'],
+            'fecha_inicio'=> $r['fecha_vencimiento'],
+            'link'        => '../tareas/form.php?id=' . $r['id'],
+        ];
+    }
+} catch (Exception $e) {}
+
+try {
+    $whereAgenteProx = $esAdmin ? '' : 'AND p.agente_id = ?';
+    $paramsProx = $esAdmin ? [$hoy] : [$uid, $hoy];
+    $stmt = $db->prepare("
+        SELECT p.id, p.nombre, p.fecha_proximo_contacto
+        FROM prospectos p
+        WHERE p.activo = 1 AND p.etapa NOT IN ('captado','descartado')
+          AND p.fecha_proximo_contacto >= ?
+          $whereAgenteProx
+        ORDER BY p.fecha_proximo_contacto ASC LIMIT 5
+    ");
+    $stmt->execute($paramsProx);
+    foreach ($stmt->fetchAll() as $r) {
+        $proximos[] = [
+            'id'          => $r['id'],
+            'titulo'      => 'Contactar: ' . $r['nombre'],
+            'tipo'        => 'llamada',
+            'color'       => '#f59e0b',
+            'fecha_inicio'=> $r['fecha_proximo_contacto'] . ' 09:00:00',
+            'link'        => '../prospectos/ver.php?id=' . $r['id'],
+        ];
+    }
+} catch (Exception $e) {}
+
+usort($proximos, fn($a, $b) => strcmp($a['fecha_inicio'], $b['fecha_inicio']));
+$proximos = array_slice($proximos, 0, 7);
+
+// Colores e iconos por tipo
 $tipoColores = [
-    'visita' => '#10b981',
-    'reunion' => '#3b82f6',
-    'llamada' => '#f59e0b',
-    'tarea' => '#8b5cf6',
-    'personal' => '#6b7280',
-    'otro' => '#ef4444',
+    'visita'=>'#10b981','reunion'=>'#3b82f6','llamada'=>'#f59e0b',
+    'tarea'=>'#8b5cf6','personal'=>'#6b7280','otro'=>'#ef4444',
 ];
-
 $tipoIconos = [
-    'visita' => 'bi-house-door',
-    'reunion' => 'bi-people',
-    'llamada' => 'bi-telephone',
-    'tarea' => 'bi-check2-square',
-    'personal' => 'bi-person',
-    'otro' => 'bi-calendar-event',
+    'visita'=>'bi-house-door','reunion'=>'bi-people','llamada'=>'bi-telephone',
+    'tarea'=>'bi-check2-square','personal'=>'bi-person','otro'=>'bi-calendar-event',
 ];
 ?>
 
@@ -187,50 +416,46 @@ $tipoIconos = [
 </div>
 
 <div class="row g-3">
-    <!-- Calendario -->
+    <!-- Grilla del calendario -->
     <div class="col-lg-9">
         <div class="card shadow-sm border-0">
             <div class="card-body p-2">
                 <div class="calendar-grid">
-                    <!-- Cabecera dias -->
                     <div class="calendar-header">
-                        <?php foreach (['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'] as $dia): ?>
-                        <div class="calendar-day-header"><?= $dia ?></div>
+                        <?php foreach (['Lun','Mar','Mie','Jue','Vie','Sab','Dom'] as $d): ?>
+                        <div class="calendar-day-header"><?= $d ?></div>
                         <?php endforeach; ?>
                     </div>
-                    <!-- Celdas -->
                     <div class="calendar-body">
-                        <?php
-                        // Celdas vacias antes del primer dia
-                        for ($i = 1; $i < $diaSemanaInicio; $i++):
-                        ?>
+                        <?php for ($i = 1; $i < $diaSemanaInicio; $i++): ?>
                         <div class="calendar-cell calendar-empty"></div>
                         <?php endfor; ?>
 
                         <?php for ($dia = 1; $dia <= $diasEnMes; $dia++):
                             $esHoy = ($dia == date('j') && $mes == date('n') && $anio == date('Y'));
-                            $tieneEventos = !empty($eventosPorDia[$dia]);
                         ?>
                         <div class="calendar-cell <?= $esHoy ? 'calendar-today' : '' ?>">
                             <div class="calendar-date <?= $esHoy ? 'bg-primary text-white rounded-circle' : '' ?>">
                                 <?= $dia ?>
                             </div>
-                            <?php if ($tieneEventos): ?>
+                            <?php if (!empty($eventosPorDia[$dia])): ?>
                                 <?php foreach (array_slice($eventosPorDia[$dia], 0, 3) as $ev): ?>
-                                <a href="form.php?id=<?= $ev['id'] ?>" class="calendar-event" style="background-color: <?= $ev['color'] ?? $tipoColores[$ev['tipo']] ?? '#10b981' ?>;" title="<?= sanitize($ev['titulo']) ?>">
-                                    <small><?= date('H:i', strtotime($ev['fecha_inicio'])) ?> <?= sanitize(mb_strimwidth($ev['titulo'], 0, 15, '...')) ?></small>
+                                <a href="<?= htmlspecialchars($ev['link']) ?>"
+                                   class="calendar-event"
+                                   style="background-color: <?= $ev['color'] ?? $tipoColores[$ev['tipo']] ?? '#10b981' ?>;"
+                                   title="<?= sanitize($ev['titulo']) ?>">
+                                    <small><?= date('H:i', strtotime($ev['fecha_inicio'])) ?> <?= sanitize(mb_strimwidth($ev['titulo'], 0, 18, '…')) ?></small>
                                 </a>
                                 <?php endforeach; ?>
-                                <?php if (count($eventosPorDia[$dia]) > 3): ?>
-                                <small class="text-muted d-block text-center">+<?= count($eventosPorDia[$dia]) - 3 ?> mas</small>
+                                <?php $extra = count($eventosPorDia[$dia]) - 3; if ($extra > 0): ?>
+                                <small class="text-muted d-block text-center">+<?= $extra ?> más</small>
                                 <?php endif; ?>
                             <?php endif; ?>
                         </div>
                         <?php endfor; ?>
 
                         <?php
-                        // Celdas vacias despues del ultimo dia
-                        $ultimoDiaSemana = date('N', mktime(0, 0, 0, $mes, $diasEnMes, $anio));
+                        $ultimoDiaSemana = (int)date('N', mktime(0,0,0,$mes,$diasEnMes,$anio));
                         for ($i = $ultimoDiaSemana + 1; $i <= 7; $i++):
                         ?>
                         <div class="calendar-cell calendar-empty"></div>
@@ -239,10 +464,21 @@ $tipoIconos = [
                 </div>
             </div>
         </div>
+
+        <!-- Leyenda -->
+        <div class="d-flex gap-3 flex-wrap mt-2 px-1">
+            <?php foreach (['visita'=>'Visitas','llamada'=>'Próx. Contacto','tarea'=>'Tareas','reunion'=>'Reuniones','calendario'=>'Eventos'] as $tipo => $label): ?>
+            <small class="d-flex align-items-center gap-1 text-muted">
+                <span class="rounded-circle d-inline-block" style="width:8px;height:8px;background:<?= $tipoColores[$tipo] ?? '#3b82f6' ?>;"></span>
+                <?= $label ?>
+            </small>
+            <?php endforeach; ?>
+        </div>
     </div>
 
-    <!-- Panel lateral: Eventos de hoy -->
+    <!-- Panel lateral -->
     <div class="col-lg-3">
+        <!-- Hoy -->
         <div class="card shadow-sm border-0">
             <div class="card-header bg-transparent">
                 <h6 class="mb-0"><i class="bi bi-calendar-check"></i> Hoy, <?= date('d/m/Y') ?></h6>
@@ -256,20 +492,21 @@ $tipoIconos = [
                 <?php else: ?>
                 <div class="list-group list-group-flush">
                     <?php foreach ($eventosHoy as $ev): ?>
-                    <a href="form.php?id=<?= $ev['id'] ?>" class="list-group-item list-group-item-action">
+                    <a href="<?= htmlspecialchars($ev['link']) ?>" class="list-group-item list-group-item-action">
                         <div class="d-flex align-items-center gap-2">
-                            <span class="rounded-circle d-inline-block" style="width: 10px; height: 10px; background: <?= $ev['color'] ?? $tipoColores[$ev['tipo']] ?? '#10b981' ?>;"></span>
-                            <div class="flex-grow-1">
-                                <div class="fw-semibold small"><?= sanitize($ev['titulo']) ?></div>
+                            <span class="rounded-circle flex-shrink-0" style="width:10px;height:10px;background:<?= $ev['color'] ?? $tipoColores[$ev['tipo']] ?? '#10b981' ?>;"></span>
+                            <div class="flex-grow-1 overflow-hidden">
+                                <div class="fw-semibold small text-truncate"><?= sanitize($ev['titulo']) ?></div>
                                 <small class="text-muted">
-                                    <?php if ($ev['todo_dia']): ?>
-                                        Todo el dia
+                                    <?php if (!empty($ev['todo_dia'])): ?>
+                                        Todo el día
                                     <?php else: ?>
-                                        <?= date('H:i', strtotime($ev['fecha_inicio'])) ?> - <?= date('H:i', strtotime($ev['fecha_fin'])) ?>
+                                        <?= date('H:i', strtotime($ev['fecha_inicio'])) ?>
+                                        – <?= date('H:i', strtotime($ev['fecha_fin'])) ?>
                                     <?php endif; ?>
                                 </small>
                                 <?php if (!empty($ev['cliente_nombre'])): ?>
-                                <br><small class="text-muted"><i class="bi bi-person"></i> <?= sanitize($ev['cliente_nombre'] . ' ' . $ev['cliente_apellidos']) ?></small>
+                                <br><small class="text-muted"><i class="bi bi-person"></i> <?= sanitize($ev['cliente_nombre'] . ' ' . ($ev['cliente_apellidos'] ?? '')) ?></small>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -280,30 +517,20 @@ $tipoIconos = [
             </div>
         </div>
 
-        <!-- Proximos eventos -->
-        <?php
-        $stmtProximos = $db->prepare("
-            SELECT ce.*, c.nombre as cliente_nombre, c.apellidos as cliente_apellidos
-            FROM calendario_eventos ce
-            LEFT JOIN clientes c ON ce.cliente_id = c.id
-            WHERE ce.usuario_id = ? AND ce.fecha_inicio > NOW()
-            ORDER BY ce.fecha_inicio ASC LIMIT 5
-        ");
-        $stmtProximos->execute([currentUserId()]);
-        $proximos = $stmtProximos->fetchAll();
-        ?>
+        <!-- Próximos -->
         <?php if (!empty($proximos)): ?>
         <div class="card shadow-sm border-0 mt-3">
             <div class="card-header bg-transparent">
-                <h6 class="mb-0"><i class="bi bi-clock"></i> Proximos</h6>
+                <h6 class="mb-0"><i class="bi bi-clock"></i> Próximos</h6>
             </div>
             <div class="list-group list-group-flush">
                 <?php foreach ($proximos as $ev): ?>
-                <a href="form.php?id=<?= $ev['id'] ?>" class="list-group-item list-group-item-action py-2">
+                <a href="<?= htmlspecialchars($ev['link']) ?>" class="list-group-item list-group-item-action py-2">
                     <div class="d-flex align-items-start gap-2">
-                        <i class="bi <?= $tipoIconos[$ev['tipo']] ?? 'bi-calendar-event' ?> mt-1" style="color: <?= $ev['color'] ?? $tipoColores[$ev['tipo']] ?? '#10b981' ?>;"></i>
-                        <div>
-                            <div class="small fw-semibold"><?= sanitize($ev['titulo']) ?></div>
+                        <i class="bi <?= $tipoIconos[$ev['tipo']] ?? 'bi-calendar-event' ?> mt-1 flex-shrink-0"
+                           style="color:<?= $ev['color'] ?? $tipoColores[$ev['tipo']] ?? '#10b981' ?>;"></i>
+                        <div class="overflow-hidden">
+                            <div class="small fw-semibold text-truncate"><?= sanitize($ev['titulo']) ?></div>
                             <small class="text-muted"><?= formatFechaHora($ev['fecha_inicio']) ?></small>
                         </div>
                     </div>
@@ -318,18 +545,18 @@ $tipoIconos = [
 <style>
 .calendar-grid { width: 100%; }
 .calendar-header { display: grid; grid-template-columns: repeat(7, 1fr); }
-.calendar-day-header { text-align: center; font-weight: 600; font-size: 0.85rem; padding: 8px 4px; color: #64748b; border-bottom: 1px solid #e2e8f0; }
+.calendar-day-header { text-align:center; font-weight:600; font-size:0.85rem; padding:8px 4px; color:#64748b; border-bottom:1px solid #e2e8f0; }
 .calendar-body { display: grid; grid-template-columns: repeat(7, 1fr); }
-.calendar-cell { min-height: 100px; border: 1px solid #f1f5f9; padding: 4px; position: relative; }
-.calendar-cell:hover { background: #f8fafc; }
-.calendar-empty { background: #fafafa; }
-.calendar-today { background: #f0fdf4 !important; }
-.calendar-date { display: inline-block; width: 28px; height: 28px; line-height: 28px; text-align: center; font-size: 0.85rem; font-weight: 500; margin-bottom: 2px; }
-.calendar-event { display: block; padding: 1px 4px; margin-bottom: 2px; border-radius: 3px; color: #fff; text-decoration: none; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.7rem; }
-.calendar-event:hover { opacity: 0.85; color: #fff; }
-@media (max-width: 768px) {
-    .calendar-cell { min-height: 60px; }
-    .calendar-event small { font-size: 0.6rem; }
+.calendar-cell { min-height:100px; border:1px solid #f1f5f9; padding:4px; }
+.calendar-cell:hover { background:#f8fafc; }
+.calendar-empty { background:#fafafa; }
+.calendar-today { background:#f0fdf4 !important; }
+.calendar-date { display:inline-block; width:28px; height:28px; line-height:28px; text-align:center; font-size:0.85rem; font-weight:500; margin-bottom:2px; }
+.calendar-event { display:block; padding:1px 4px; margin-bottom:2px; border-radius:3px; color:#fff; text-decoration:none; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:0.7rem; }
+.calendar-event:hover { opacity:0.85; color:#fff; }
+@media (max-width:768px) {
+    .calendar-cell { min-height:60px; }
+    .calendar-event small { font-size:0.6rem; }
 }
 </style>
 

@@ -58,17 +58,31 @@ if (!function_exists('automatizacionesResolverTelefono')) {
 }
 
 if (!function_exists('automatizacionesEnviarWhatsapp')) {
-    function automatizacionesEnviarWhatsapp(PDO $db, array $auto, array $config, array $contexto): array {
+function automatizacionesEnviarWhatsapp(PDO $db, array $auto, array $config, array $contexto): array {
         $telefono = automatizacionesResolverTelefono($db, $auto, $config, $contexto);
         if ($telefono === '') {
             return ['ok' => false, 'detalle' => 'No se pudo resolver telefono destino.'];
         }
 
-        $stmtCfg = $db->prepare("SELECT phone_number_id, access_token FROM whatsapp_config WHERE activo = 1 AND updated_by = ? ORDER BY id DESC LIMIT 1");
-        $stmtCfg->execute([intval($auto['created_by'])]);
-        $waCfg = $stmtCfg->fetch(PDO::FETCH_ASSOC);
-        if (!$waCfg || empty($waCfg['phone_number_id']) || empty($waCfg['access_token'])) {
-            return ['ok' => false, 'detalle' => 'No hay configuracion activa de WhatsApp para el usuario propietario.'];
+        $sid = getenv('TWILIO_ACCOUNT_SID') ?: '';
+        $token = getenv('TWILIO_AUTH_TOKEN') ?: '';
+        $from = getenv('TWILIO_WHATSAPP_FROM') ?: '';
+
+        if (!$sid || !$token || !$from) {
+            try {
+                $stmtCfg = $db->prepare("SELECT account_sid, auth_token, phone_number FROM twilio_config WHERE activo = 1 ORDER BY id DESC LIMIT 1");
+                $stmtCfg->execute();
+                $twCfg = $stmtCfg->fetch(PDO::FETCH_ASSOC);
+                if ($twCfg) {
+                    $sid = $sid ?: $twCfg['account_sid'];
+                    $token = $token ?: $twCfg['auth_token'];
+                    $from = $from ?: $twCfg['phone_number'];
+                }
+            } catch (Throwable $e) {}
+        }
+
+        if (!$sid || !$token || !$from) {
+            return ['ok' => false, 'detalle' => 'Twilio WhatsApp no está configurado en el .env.'];
         }
 
         if (!function_exists('curl_init')) {
@@ -80,27 +94,22 @@ if (!function_exists('automatizacionesEnviarWhatsapp')) {
             $mensaje = 'Mensaje automatico';
         }
 
-        $payload = [
-            'messaging_product' => 'whatsapp',
-            'recipient_type' => 'individual',
-            'to' => $telefono,
-            'type' => 'text',
-            'text' => [
-                'preview_url' => false,
-                'body' => $mensaje,
-            ],
-        ];
+        if (strpos($from, 'whatsapp:') !== 0) $from = 'whatsapp:' . $from;
+        $to = 'whatsapp:+' . $telefono;
 
-        $endpoint = 'https://graph.facebook.com/v21.0/' . rawurlencode((string)$waCfg['phone_number_id']) . '/messages';
-        $ch = curl_init($endpoint);
+        $url = "https://api.twilio.com/2010-04-01/Accounts/$sid/Messages.json";
+        $payload = http_build_query([
+            'To' => $to,
+            'From' => $from,
+            'Body' => $mensaje
+        ]);
+
+        $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
-            CURLOPT_HTTPHEADER => [
-                'Authorization: Bearer ' . $waCfg['access_token'],
-                'Content-Type: application/json',
-            ],
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_USERPWD => "$sid:$token",
             CURLOPT_TIMEOUT => 20,
         ]);
 
@@ -111,16 +120,16 @@ if (!function_exists('automatizacionesEnviarWhatsapp')) {
 
         $resp = is_string($respBody) ? json_decode($respBody, true) : null;
         if ($curlErr !== '') {
-            return ['ok' => false, 'detalle' => 'Error de conexion: ' . $curlErr];
+            return ['ok' => false, 'detalle' => 'Error de conexion con Twilio: ' . $curlErr];
         }
 
-        if ($httpCode >= 200 && $httpCode < 300 && !empty($resp['messages'][0]['id'])) {
-            return ['ok' => true, 'detalle' => 'WhatsApp enviado (id ' . $resp['messages'][0]['id'] . ').'];
+        if ($httpCode >= 200 && $httpCode < 300 && !empty($resp['sid'])) {
+            return ['ok' => true, 'detalle' => 'WhatsApp enviado (SID ' . $resp['sid'] . ').'];
         }
 
-        $msg = trim((string)($resp['error']['message'] ?? ''));
-        $code = (string)($resp['error']['code'] ?? '');
-        $detalle = $msg !== '' ? ($code !== '' ? ('Codigo ' . $code . ': ' . $msg) : $msg) : ('HTTP ' . $httpCode . ' en API de WhatsApp.');
+        $msg = trim((string)($resp['message'] ?? ''));
+        $code = (string)($resp['code'] ?? '');
+        $detalle = $msg !== '' ? ($code !== '' ? ('Codigo ' . $code . ': ' . $msg) : $msg) : ('HTTP ' . $httpCode . ' en API de Twilio.');
         return ['ok' => false, 'detalle' => $detalle];
     }
 }

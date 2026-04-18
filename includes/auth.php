@@ -8,11 +8,12 @@ if (session_status() === PHP_SESSION_NONE) {
     $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
     session_set_cookie_params([
         'lifetime' => 0,
-        'path' => '/',
-        'secure' => $secure,
+        'path'     => '/',
+        'secure'   => $secure,
         'httponly' => true,
         'samesite' => 'Lax',
     ]);
+    ini_set('session.use_strict_mode', 1); // Previene session fixation con IDs externos
     session_start();
 }
 
@@ -217,6 +218,7 @@ function customRoleModuleCatalog() {
         'ads' => 'Ads Report',
         'social' => 'Redes Sociales',
         'email' => 'Email',
+        'secuencia_captacion' => 'Secuencia Captación',
         'whatsapp' => 'WhatsApp',
         'sms' => 'SMS',
         'blog' => 'Blog',

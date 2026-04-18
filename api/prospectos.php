@@ -71,14 +71,14 @@ switch ($accion) {
         // Campos permitidos para edición inline
         $camposPermitidos = [
             'nombre', 'email', 'telefono', 'telefono2', 'etapa', 'estado', 'temperatura',
-            'tipo_propiedad', 'operacion', 'direccion', 'numero', 'piso_puerta', 'barrio',
+            'tipo_propiedad', 'operacion', 'direccion', 'numero', 'piso_puerta', 'escalera', 'puerta', 'barrio',
             'localidad', 'provincia', 'comunidad_autonoma', 'codigo_postal',
             'precio_estimado', 'precio_propietario', 'precio_comunidad',
             'superficie', 'superficie_construida', 'superficie_util', 'superficie_parcela',
             'habitaciones', 'banos', 'aseos', 'planta',
             'ascensor', 'garaje_incluido', 'trastero_incluido', 'terraza', 'balcon', 'jardin', 'piscina', 'aire_acondicionado',
             'calefaccion', 'orientacion', 'antiguedad', 'estado_conservacion', 'certificacion_energetica', 'referencia_catastral',
-            'enlace', 'descripcion', 'descripcion_interna', 'comision', 'exclusividad', 'notas', 'reformas',
+            'enlace', 'descripcion', 'descripcion_interna', 'comision', 'exclusividad', 'notas', 'reformas', 'proxima_accion',
             'fecha_publicacion_propiedad', 'fecha_contacto', 'hora_contacto', 'mejor_horario_contacto',
             'fecha_proximo_contacto', 'agente_id'
         ];
@@ -267,23 +267,85 @@ switch ($accion) {
         break;
 
     // ─────────────────────────────────────────────
-    // TAREAS POR DÍA (mini calendario)
+    // EVENTOS POR DÍA (mini calendario - todos los tipos)
     // ─────────────────────────────────────────────
     case 'tareas_dia':
         $prospectoId = intval($_GET['prospecto_id'] ?? 0);
-        $fecha = $_GET['fecha'] ?? date('Y-m-d');
+        $fecha = preg_replace('/[^0-9\-]/', '', $_GET['fecha'] ?? date('Y-m-d'));
+        if (!$fecha || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)) {
+            $fecha = date('Y-m-d');
+        }
+        $uid = currentUserId();
+        $eventos = [];
 
-        // Buscar tareas del prospecto para ese día
-        // Usamos la relación indirecta via historial o directa via tareas
-        $stmt = $db->prepare("SELECT t.id, t.titulo, t.tipo, t.estado, t.prioridad, t.fecha_vencimiento 
-                              FROM tareas t 
-                              WHERE DATE(t.fecha_vencimiento) = ? 
-                              AND (t.asignado_a = ? OR t.creado_por = ?)
-                              ORDER BY t.fecha_vencimiento ASC");
-        $stmt->execute([$fecha, currentUserId(), currentUserId()]);
-        $tareas = $stmt->fetchAll();
+        // Tareas
+        try {
+            $st = $db->prepare("SELECT t.titulo, t.estado, t.prioridad,
+                                       DATE_FORMAT(t.fecha_vencimiento,'%H:%i') as hora,
+                                       CASE t.prioridad WHEN 'urgente' THEN '#ef4444' WHEN 'alta' THEN '#f59e0b' ELSE '#8b5cf6' END as color
+                                FROM tareas t
+                                WHERE DATE(t.fecha_vencimiento) = ?
+                                  AND (t.asignado_a = ? OR t.creado_por = ?)
+                                ORDER BY t.fecha_vencimiento ASC");
+            $st->execute([$fecha, $uid, $uid]);
+            foreach ($st->fetchAll() as $r) {
+                $eventos[] = ['tipo' => 'tarea', 'titulo' => $r['titulo'],
+                              'hora' => $r['hora'] ?: '00:00', 'color' => $r['color'], 'estado' => $r['estado']];
+            }
+        } catch (Exception $e) {}
 
-        echo json_encode(['success' => true, 'tareas' => $tareas, 'fecha' => $fecha]);
+        // Eventos de calendario
+        try {
+            $st = $db->prepare("SELECT ce.titulo, ce.tipo, ce.todo_dia,
+                                       DATE_FORMAT(ce.fecha_inicio,'%H:%i') as hora,
+                                       COALESCE(ce.color,'#3b82f6') as color
+                                FROM calendario_eventos ce
+                                WHERE ce.usuario_id = ? AND DATE(ce.fecha_inicio) = ?
+                                ORDER BY ce.fecha_inicio ASC");
+            $st->execute([$uid, $fecha]);
+            foreach ($st->fetchAll() as $r) {
+                $eventos[] = ['tipo' => $r['tipo'], 'titulo' => $r['titulo'],
+                              'hora' => $r['todo_dia'] ? '🕐 Todo el día' : ($r['hora'] ?: '00:00'),
+                              'color' => $r['color'], 'estado' => null];
+            }
+        } catch (Exception $e) {}
+
+        // Visitas
+        try {
+            $st = $db->prepare("SELECT CONCAT('Visita: ', COALESCE(c.nombre,'Sin cliente'),
+                                       IF(p.referencia IS NOT NULL, CONCAT(' — ',p.referencia),'')) as titulo,
+                                       DATE_FORMAT(v.hora,'%H:%i') as hora
+                                FROM visitas v
+                                LEFT JOIN clientes c ON v.cliente_id = c.id
+                                LEFT JOIN propiedades p ON v.propiedad_id = p.id
+                                WHERE v.agente_id = ? AND v.fecha = ?
+                                ORDER BY v.hora ASC");
+            $st->execute([$uid, $fecha]);
+            foreach ($st->fetchAll() as $r) {
+                $eventos[] = ['tipo' => 'visita', 'titulo' => $r['titulo'],
+                              'hora' => $r['hora'] ?: '09:00', 'color' => '#10b981', 'estado' => null];
+            }
+        } catch (Exception $e) {}
+
+        // Prospectos con próximo contacto ese día
+        try {
+            $esAdminApi = isAdmin();
+            $whereAg = $esAdminApi ? '' : 'AND p.agente_id = ?';
+            $paramsAg = $esAdminApi ? [$fecha] : [$uid, $fecha];
+            $st = $db->prepare("SELECT p.nombre FROM prospectos p
+                                WHERE p.activo = 1
+                                  AND p.etapa NOT IN ('captado','descartado')
+                                  AND p.fecha_proximo_contacto = ?
+                                  $whereAg");
+            $st->execute($paramsAg);
+            foreach ($st->fetchAll() as $r) {
+                $eventos[] = ['tipo' => 'llamada', 'titulo' => 'Contactar: ' . $r['nombre'],
+                              'hora' => '09:00', 'color' => '#f59e0b', 'estado' => null];
+            }
+        } catch (Exception $e) {}
+
+        usort($eventos, fn($a, $b) => strcmp($a['hora'], $b['hora']));
+        echo json_encode(['success' => true, 'tareas' => $eventos, 'eventos' => $eventos, 'fecha' => $fecha]);
         break;
 
     // ─────────────────────────────────────────────
@@ -333,6 +395,78 @@ switch ($accion) {
             $stmt = $db->prepare("INSERT INTO custom_field_values (field_id, entidad_id, valor) 
                                   VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE valor = VALUES(valor)");
             $stmt->execute([$fieldId, $prospectoId, $valor]);
+            echo json_encode(['success' => true]);
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+        break;
+
+    // ─────────────────────────────────────────────
+    // HISTORIAL DE PROPIEDAD
+    // ─────────────────────────────────────────────
+    case 'add_historial_propiedad':
+        $prospectoId = intval($_POST['prospecto_id'] ?? 0);
+        $tipo = $_POST['tipo'] ?? 'otro';
+        $descripcion = trim($_POST['descripcion'] ?? '');
+        $precioAnterior = $_POST['precio_anterior'] !== '' ? floatval(str_replace(['.', ','], ['', '.'], $_POST['precio_anterior'] ?? '')) : null;
+        $precioNuevo = $_POST['precio_nuevo'] !== '' ? floatval(str_replace(['.', ','], ['', '.'], $_POST['precio_nuevo'] ?? '')) : null;
+
+        if (!$prospectoId) {
+            echo json_encode(['success' => false, 'error' => 'Prospecto requerido']);
+            exit;
+        }
+        if (!usuarioPuedeAccederProspecto($db, $prospectoId)) {
+            echo json_encode(['success' => false, 'error' => 'Sin permisos']);
+            exit;
+        }
+
+        $tiposValidos = ['subida_precio', 'bajada_precio', 'modificacion', 'publicacion', 'retirada', 'otro'];
+        if (!in_array($tipo, $tiposValidos)) $tipo = 'otro';
+
+        try {
+            $stmt = $db->prepare("INSERT INTO historial_propiedad_prospecto
+                (prospecto_id, usuario_id, tipo, descripcion, precio_anterior, precio_nuevo)
+                VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$prospectoId, currentUserId(), $tipo, $descripcion ?: null, $precioAnterior, $precioNuevo]);
+            $newId = $db->lastInsertId();
+
+            $stmt2 = $db->prepare("SELECT h.*, u.nombre as usuario_nombre, u.apellidos as usuario_apellidos
+                                   FROM historial_propiedad_prospecto h
+                                   LEFT JOIN usuarios u ON h.usuario_id = u.id
+                                   WHERE h.id = ?");
+            $stmt2->execute([$newId]);
+            $entrada = $stmt2->fetch();
+
+            echo json_encode([
+                'success' => true,
+                'entrada' => [
+                    'id' => $entrada['id'],
+                    'tipo' => $entrada['tipo'],
+                    'descripcion' => htmlspecialchars($entrada['descripcion'] ?? ''),
+                    'precio_anterior' => $entrada['precio_anterior'],
+                    'precio_nuevo' => $entrada['precio_nuevo'],
+                    'usuario' => htmlspecialchars(($entrada['usuario_nombre'] ?? '') . ' ' . ($entrada['usuario_apellidos'] ?? '')),
+                    'usuario_iniciales' => strtoupper(mb_substr($entrada['usuario_nombre'] ?? '', 0, 1) . mb_substr($entrada['usuario_apellidos'] ?? '', 0, 1)),
+                    'fecha' => date('d/m/Y H:i', strtotime($entrada['created_at'])),
+                ]
+            ]);
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+        break;
+
+    case 'delete_historial_propiedad':
+        $entradaId = intval($_POST['entrada_id'] ?? 0);
+        if (!$entradaId) {
+            echo json_encode(['success' => false, 'error' => 'ID requerido']);
+            exit;
+        }
+        try {
+            if (isAdmin()) {
+                $db->prepare("DELETE FROM historial_propiedad_prospecto WHERE id = ?")->execute([$entradaId]);
+            } else {
+                $db->prepare("DELETE FROM historial_propiedad_prospecto WHERE id = ? AND usuario_id = ?")->execute([$entradaId, currentUserId()]);
+            }
             echo json_encode(['success' => true]);
         } catch (Exception $e) {
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);

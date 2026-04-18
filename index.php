@@ -105,14 +105,32 @@ $carteraLabels = [
 ];
 
 // ═══════════════════════════════════════════
-// TASAS DE CONVERSIÓN
+// CONTACTOS DEL MES (historial_prospectos)
 // ═══════════════════════════════════════════
-$totalContactados = ($pipelineCaptacion['nuevo_lead'] ?? 0) + ($pipelineCaptacion['contactado'] ?? 0) + ($pipelineCaptacion['seguimiento'] ?? 0) + ($pipelineCaptacion['visita_programada'] ?? 0) + ($pipelineCaptacion['en_negociacion'] ?? 0) + ($pipelineCaptacion['captado'] ?? 0);
-$totalVisitas = ($pipelineCaptacion['visita_programada'] ?? 0) + ($pipelineCaptacion['en_negociacion'] ?? 0) + ($pipelineCaptacion['captado'] ?? 0);
-$totalCaptados = $pipelineCaptacion['captado'] ?? 0;
-
-$convContactoVisita = $totalContactados > 0 ? round(($totalVisitas / $totalContactados) * 100) : 0;
-$convVisitaCaptado = $totalVisitas > 0 ? round(($totalCaptados / $totalVisitas) * 100) : 0;
+$mesActual  = date('Y-m');
+$contactosMes = ['llamada' => 0, 'email' => 0, 'visita' => 0, 'whatsapp' => 0, 'nota' => 0, 'otro' => 0];
+$contactosMesTotal = 0;
+$contactosHoy = 0;
+try {
+    $stmtCMes = $db->prepare("
+        SELECT tipo, COUNT(*) as total
+        FROM historial_prospectos
+        WHERE usuario_id = ?
+          AND DATE_FORMAT(COALESCE(fecha_evento, created_at), '%Y-%m') = ?
+        GROUP BY tipo
+    ");
+    $stmtCMes->execute([$userId, $mesActual]);
+    foreach ($stmtCMes->fetchAll() as $row) {
+        $contactosMes[$row['tipo']] = intval($row['total']);
+        $contactosMesTotal += intval($row['total']);
+    }
+    $stmtCHoy = $db->prepare("
+        SELECT COUNT(*) FROM historial_prospectos
+        WHERE usuario_id = ? AND DATE(COALESCE(fecha_evento, created_at)) = CURDATE()
+    ");
+    $stmtCHoy->execute([$userId]);
+    $contactosHoy = intval($stmtCHoy->fetchColumn());
+} catch (Exception $e) {}
 
 // ═══════════════════════════════════════════
 // CONTACTAR HOY — Top 50 Prospectos por Urgencia
@@ -808,44 +826,57 @@ $tempColors = ['frio' => '#3b82f6', 'templado' => '#f59e0b', 'caliente' => '#ef4
         </div>
     </div>
 
-    <!-- Tasas de Conversión -->
+    <!-- Contactos del mes -->
     <div class="col-lg-4">
         <div class="card h-100">
             <div class="card-header py-2">
                 <span class="section-title" style="background: #fce7f3; color: #be185d; font-size: 0.68rem;">
-                    <i class="bi bi-graph-up-arrow"></i> TASAS DE CONVERSIÓN
+                    <?php $mesesEs = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']; ?>
+                    <i class="bi bi-telephone-fill"></i> MIS CONTACTOS — <?= strtoupper($mesesEs[intval(date('n'))] ?? date('F')) ?>
                 </span>
             </div>
-            <div class="card-body">
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between small mb-1">
-                        <span>1er Contacto → Visita</span>
-                        <strong><?= $convContactoVisita ?>%</strong>
+            <div class="card-body d-flex flex-column">
+                <!-- Total grande -->
+                <div class="text-center mb-3">
+                    <div style="font-size: 2.8rem; font-weight: 800; line-height: 1; color: var(--bs-primary);">
+                        <?= $contactosMesTotal ?>
                     </div>
-                    <div class="progress" style="height: 8px;">
-                        <div class="progress-bar bg-primary" style="width: <?= $convContactoVisita ?>%"></div>
-                    </div>
-                </div>
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between small mb-1">
-                        <span>Visita → Captado</span>
-                        <strong><?= $convVisitaCaptado ?>%</strong>
-                    </div>
-                    <div class="progress" style="height: 8px;">
-                        <div class="progress-bar bg-success" style="width: <?= $convVisitaCaptado ?>%"></div>
+                    <div class="text-muted small mt-1">contactos este mes</div>
+                    <div class="mt-1">
+                        <span class="badge bg-light text-dark border">
+                            <i class="bi bi-calendar-day"></i> Hoy: <strong><?= $contactosHoy ?></strong>
+                        </span>
                     </div>
                 </div>
-                <div class="mt-3 text-center">
-                    <div class="d-flex justify-content-around">
-                        <div>
-                            <div class="fs-4 fw-bold text-primary"><?= $tareasPendientes ?></div><small
-                                class="text-muted">Tareas pendientes</small>
+                <!-- Desglose por tipo -->
+                <div class="mt-auto">
+                    <?php
+                    $tiposContacto = [
+                        'llamada'  => ['Llamadas',  'bi-telephone',       '#3b82f6'],
+                        'whatsapp' => ['WhatsApp',  'bi-whatsapp',        '#25d366'],
+                        'email'    => ['Emails',    'bi-envelope',        '#f59e0b'],
+                        'visita'   => ['Visitas',   'bi-house-door',      '#10b981'],
+                        'nota'     => ['Notas',     'bi-sticky',          '#8b5cf6'],
+                        'otro'     => ['Otros',     'bi-three-dots',      '#6b7280'],
+                    ];
+                    foreach ($tiposContacto as $tipo => [$label, $icon, $color]):
+                        $n = $contactosMes[$tipo] ?? 0;
+                        if ($n === 0) continue;
+                        $pct = $contactosMesTotal > 0 ? round(($n / $contactosMesTotal) * 100) : 0;
+                    ?>
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between align-items-center small mb-1">
+                            <span><i class="bi <?= $icon ?>" style="color:<?= $color ?>"></i> <?= $label ?></span>
+                            <strong><?= $n ?></strong>
                         </div>
-                        <div>
-                            <div class="fs-4 fw-bold text-danger"><?= $tareasVencidas ?></div><small
-                                class="text-muted">Vencidas</small>
+                        <div class="progress" style="height: 5px;">
+                            <div class="progress-bar" style="width:<?= $pct ?>%; background:<?= $color ?>"></div>
                         </div>
                     </div>
+                    <?php endforeach; ?>
+                    <?php if ($contactosMesTotal === 0): ?>
+                    <p class="text-muted small text-center mb-0">Aún no hay contactos registrados este mes.</p>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>

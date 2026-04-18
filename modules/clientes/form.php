@@ -281,4 +281,39 @@ $tiposCliente = $c ? explode(',', $c['tipo']) : [];
     </div>
 </form>
 
+<script>
+(function() {
+    const excludeId = <?= $id ?: 0 ?>;
+    const excludeTipo = 'cliente';
+
+    function checkDuplicate(input, campo) {
+        const valor = input.value.trim();
+        let warnEl = input.parentElement.querySelector('.dup-warn');
+        if (!warnEl) {
+            warnEl = document.createElement('div');
+            warnEl.className = 'dup-warn text-danger small mt-1';
+            input.parentElement.appendChild(warnEl);
+        }
+        warnEl.textContent = '';
+        if (!valor) return;
+
+        fetch(`../../api/check_duplicate.php?campo=${encodeURIComponent(campo)}&valor=${encodeURIComponent(valor)}&exclude_id=${excludeId}&exclude_tipo=${excludeTipo}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.matches && data.matches.length > 0) {
+                    const names = data.matches.map(m => `${m.tipo}: ${m.nombre}${m.referencia ? ' (' + m.referencia + ')' : ''}`).join(', ');
+                    warnEl.textContent = `⚠ Ya existe con este dato: ${names}`;
+                }
+            })
+            .catch(() => {});
+    }
+
+    document.querySelectorAll('input[name="telefono"], input[name="telefono2"]').forEach(el => {
+        el.addEventListener('blur', () => checkDuplicate(el, 'telefono'));
+    });
+    const emailEl = document.querySelector('input[name="email"]');
+    if (emailEl) emailEl.addEventListener('blur', () => checkDuplicate(emailEl, 'email'));
+})();
+</script>
+
 <?php require_once __DIR__ . '/../../includes/footer.php'; ?>

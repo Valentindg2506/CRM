@@ -1,25 +1,88 @@
-# Config with credentials
-config/database.php
+# ============================================================
+# CREDENCIALES Y CONFIGURACIÓN SENSIBLE — nunca subir a Git
+# ============================================================
 .env
+.env.local
+.env.*.local
 
-# Logs and backups
-logs/*.log
-backups/*.sql
-backups/*.gz
+# ============================================================
+# ARCHIVOS TEMPORALES DE MIGRACIÓN — ejecutar y borrar
+# ============================================================
+migrate_*.php
+install_updates_*.php
 
-# Uploads
+# ============================================================
+# LOGS
+# ============================================================
+logs/
+*.log
+
+# ============================================================
+# BACKUPS
+# ============================================================
+backups/
+*.sql
+*.sql.gz
+*.dump
+
+# ============================================================
+# UPLOADS DE USUARIOS — datos privados
+# ============================================================
+assets/uploads/*
+!assets/uploads/.gitkeep
 uploads/*
 !uploads/.gitkeep
 
-# IDE
+# ============================================================
+# DOCUMENTOS GENERADOS
+# ============================================================
+assets/pdfs/
+assets/exports/
+*.pdf
+*.csv
+
+# ============================================================
+# DEPENDENCIAS EXTERNAS (si se añaden en el futuro)
+# ============================================================
+vendor/
+node_modules/
+composer.lock
+package-lock.json
+
+# ============================================================
+# IDEs Y EDITORES
+# ============================================================
 .idea/
 .vscode/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
+nbproject/
+.project
+.buildpath
 
-# OS
+# ============================================================
+# SISTEMA OPERATIVO
+# ============================================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
+# ============================================================
 # PHP
+# ============================================================
 .user.ini
+php_errorlog
+error_log
+
+# ============================================================
+# CACHÉ
+# ============================================================
+cache/
+*.cache

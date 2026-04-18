@@ -32,14 +32,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'convertir_clien
         ];
         $fields = array_keys($clienteData);
         $placeholders = str_repeat('?,', count($fields) - 1) . '?';
+
+        $db->beginTransaction();
         $db->prepare("INSERT INTO clientes (`" . implode('`,`', $fields) . "`) VALUES ($placeholders)")->execute(array_values($clienteData));
         $clienteId = $db->lastInsertId();
         $db->prepare("UPDATE prospectos SET etapa = 'captado', estado = 'captado' WHERE id = ?")->execute([$id]);
+        $db->commit();
+
         registrarActividad('convertir', 'prospecto', $id, 'Convertido a cliente #' . $clienteId);
         setFlash('success', 'Prospecto convertido a cliente correctamente. <a href="' . APP_URL . '/modules/clientes/ver.php?id=' . $clienteId . '">Ver cliente</a>');
         header('Location: ver.php?id=' . $id);
         exit;
     } catch (Exception $e) {
+        if ($db->inTransaction()) $db->rollBack();
         setFlash('danger', 'Error al convertir: ' . $e->getMessage());
     }
 }
@@ -126,16 +131,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'convertir_propi
 
         $fields = array_keys($propiedadData);
         $placeholders = str_repeat('?,', count($fields) - 1) . '?';
+        $db->beginTransaction();
         $db->prepare("INSERT INTO propiedades (`" . implode('`,`', $fields) . "`) VALUES ($placeholders)")->execute(array_values($propiedadData));
         $propiedadId = $db->lastInsertId();
-
         $db->prepare("UPDATE prospectos SET etapa = 'captado', estado = 'captado' WHERE id = ?")->execute([$id]);
-        registrarActividad('convertir', 'prospecto', $id, 'Convertido a propiedad #' . $propiedadId);
+        $db->commit();
 
+        registrarActividad('convertir', 'prospecto', $id, 'Convertido a propiedad #' . $propiedadId);
         setFlash('success', 'Prospecto convertido a propiedad correctamente. <a href="' . APP_URL . '/modules/propiedades/ver.php?id=' . $propiedadId . '">Ver propiedad</a>');
         header('Location: ver.php?id=' . $id);
         exit;
     } catch (Exception $e) {
+        if ($db->inTransaction()) $db->rollBack();
         setFlash('danger', 'Error al convertir a propiedad: ' . $e->getMessage());
     }
 }
@@ -143,7 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('accion') === 'convertir_propi
 $etapas = [
     'nuevo_lead' => ['label' => 'Nuevo Lead', 'color' => '#06b6d4', 'icon' => 'bi-star'],
     'contactado' => ['label' => 'Contactado', 'color' => '#64748b', 'icon' => 'bi-telephone'],
-    'en_seguimiento' => ['label' => 'En Seguimiento', 'color' => '#3b82f6', 'icon' => 'bi-arrow-repeat'],
+    'seguimiento' => ['label' => 'Seguimiento', 'color' => '#3b82f6', 'icon' => 'bi-arrow-repeat'],
     'visita_programada' => ['label' => 'Visita Programada', 'color' => '#8b5cf6', 'icon' => 'bi-calendar-check'],
     'captado' => ['label' => 'Captado', 'color' => '#10b981', 'icon' => 'bi-check-circle'],
     'descartado' => ['label' => 'Descartado', 'color' => '#ef4444', 'icon' => 'bi-x-circle'],
@@ -152,7 +159,7 @@ $etapas = [
 $estados = [
     'nuevo_lead' => 'Nuevo lead',
     'contactado' => 'Contactado',
-    'en_seguimiento' => 'En seguimiento',
+    'seguimiento' => 'Seguimiento',
     'visita_programada' => 'Visita programada',
     'captado' => 'Captado',
     'descartado' => 'Descartado',
@@ -161,8 +168,8 @@ $estados = [
 $temperaturas = ['frio' => ['label' => 'Frío', 'color' => '#3b82f6', 'icon' => 'bi-snow'], 'templado' => ['label' => 'Templado', 'color' => '#f59e0b', 'icon' => 'bi-thermometer-half'], 'caliente' => ['label' => 'Caliente', 'color' => '#ef4444', 'icon' => 'bi-fire']];
 
 $etapaActual = $p['etapa'];
-if (in_array($etapaActual, ['seguimiento', 'en_negociacion'], true)) {
-    $etapaActual = 'en_seguimiento';
+if ($etapaActual === 'en_negociacion') {
+    $etapaActual = 'seguimiento';
 }
 $etapaInfo = $etapas[$etapaActual] ?? ['label' => $p['etapa'], 'color' => '#64748b', 'icon' => 'bi-circle'];
 $tempInfo = $temperaturas[$p['temperatura'] ?? 'frio'] ?? $temperaturas['frio'];
@@ -175,6 +182,18 @@ $stmtHist = $db->prepare("SELECT h.*, u.nombre as usuario_nombre, u.apellidos as
                            ORDER BY COALESCE(h.fecha_evento, h.created_at) DESC LIMIT 50");
 $stmtHist->execute([$id]);
 $historial = $stmtHist->fetchAll();
+
+// Historial de Propiedad
+$historialPropiedad = [];
+try {
+    $stmtHP = $db->prepare("SELECT h.*, u.nombre as usuario_nombre, u.apellidos as usuario_apellidos
+                             FROM historial_propiedad_prospecto h
+                             LEFT JOIN usuarios u ON h.usuario_id = u.id
+                             WHERE h.prospecto_id = ?
+                             ORDER BY h.created_at DESC LIMIT 50");
+    $stmtHP->execute([$id]);
+    $historialPropiedad = $stmtHP->fetchAll();
+} catch (Exception $e) { /* tabla aún no migrada */ }
 
 // Custom fields
 $customValues = getCustomFieldValues($id, 'prospecto');
@@ -190,6 +209,15 @@ $tiposHistorial = [
     'nota' => ['label' => 'Nota', 'icon' => 'bi-sticky', 'color' => '#f59e0b'],
     'whatsapp' => ['label' => 'WhatsApp', 'icon' => 'bi-whatsapp', 'color' => '#25d366'],
     'otro' => ['label' => 'Otro', 'icon' => 'bi-chat-dots', 'color' => '#6b7280'],
+];
+
+$tiposHistorialPropiedad = [
+    'subida_precio' => ['label' => 'Subida de precio', 'icon' => 'bi-graph-up-arrow', 'color' => '#ef4444'],
+    'bajada_precio' => ['label' => 'Bajada de precio', 'icon' => 'bi-graph-down-arrow', 'color' => '#10b981'],
+    'modificacion' => ['label' => 'Modificación', 'icon' => 'bi-pencil-square', 'color' => '#3b82f6'],
+    'publicacion' => ['label' => 'Publicación', 'icon' => 'bi-megaphone', 'color' => '#8b5cf6'],
+    'retirada' => ['label' => 'Retirada', 'icon' => 'bi-eye-slash', 'color' => '#6b7280'],
+    'otro' => ['label' => 'Otro', 'icon' => 'bi-three-dots', 'color' => '#94a3b8'],
 ];
 ?>
 
@@ -229,14 +257,25 @@ $tiposHistorial = [
 .mini-cal-wrapper { background: #fff; border-radius: 8px; }
 [data-bs-theme="dark"] .mini-cal-wrapper { background: #1e293b; }
 .mini-cal-wrapper .flatpickr-calendar { box-shadow: none !important; width: 100% !important; }
-.task-list-day { max-height: 200px; overflow-y: auto; }
-.task-item { padding: 6px 10px; border-radius: 6px; margin-bottom: 4px; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; }
+.task-list-day { max-height: 160px; overflow-y: auto; }
+.task-item { padding: 5px 8px; border-radius: 6px; margin-bottom: 3px; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; }
 
 /* Add contact form */
 .add-contact-form { border-top: 1px solid rgba(0,0,0,0.08); padding-top: 12px; }
 .contact-type-selector { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
 .contact-type-btn { border: 1px solid #e2e8f0; background: transparent; padding: 3px 10px; border-radius: 16px; font-size: 0.75rem; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 4px; }
 .contact-type-btn:hover, .contact-type-btn.active { border-color: var(--primary); background: var(--primary-light); color: var(--primary); }
+
+/* Historial Propiedad */
+.prop-hist-entry { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid rgba(0,0,0,0.05); }
+.prop-hist-entry:last-child { border-bottom: none; }
+.prop-hist-icon { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; flex-shrink: 0; color: #fff; }
+.prop-hist-content { flex: 1; min-width: 0; }
+.prop-hist-meta { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
+.price-change { font-weight: 600; font-size: 0.85rem; }
+.prop-type-selector { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+.prop-type-btn { border: 1px solid #e2e8f0; background: transparent; padding: 3px 10px; border-radius: 16px; font-size: 0.75rem; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 4px; }
+.prop-type-btn:hover, .prop-type-btn.active { border-color: var(--primary); background: var(--primary-light); color: var(--primary); }
 </style>
 
 <!-- Toolbar -->
@@ -254,7 +293,7 @@ $tiposHistorial = [
         <span class="badge" style="background: <?= $tempInfo['color'] ?>;">
             <i class="bi <?= $tempInfo['icon'] ?>"></i> <?= $tempInfo['label'] ?>
         </span>
-        <?php if ($p['exclusividad']): ?><span class="badge bg-warning text-dark ms-1"><i class="bi bi-star-fill"></i> Exclusiva</span><?php endif; ?>
+        <?php /* exclusividad badge eliminado */ ?>
         <?php if (!$p['activo']): ?><span class="badge bg-secondary ms-1">Inactivo</span><?php endif; ?>
     </div>
     <div class="d-flex gap-2">
@@ -358,8 +397,8 @@ $tiposHistorial = [
 
                 <div class="mb-2">
                     <small class="text-muted d-block">Estado</small>
-                    <span class="editable-field" data-field="estado" data-type="select" data-options='<?= json_encode($estados) ?>' data-value="<?= $p['estado'] ?>">
-                        <span class="badge-estado badge-<?= $p['estado'] ?>"><?= $estados[$p['estado']] ?? $p['estado'] ?></span>
+                    <span class="editable-field" data-field="etapa" data-type="select" data-options='<?= json_encode($estados) ?>' data-value="<?= $etapaActual ?>">
+                        <span class="badge-estado badge-<?= $etapaActual ?>"><?= $estados[$etapaActual] ?? $etapaActual ?></span>
                         <i class="bi bi-pencil edit-icon"></i>
                     </span>
                 </div>
@@ -439,30 +478,17 @@ $tiposHistorial = [
                             <i class="bi bi-pencil edit-icon"></i>
                         </span>
                     </div>
-                    <div class="col-6">
-                        <div class="detail-label">Comisión</div>
-                        <span class="editable-field" data-field="comision" data-type="number" data-value="<?= $p['comision'] ?? '' ?>">
-                            <span class="detail-value"><?= $p['comision'] ? $p['comision'] . '%' : '-' ?></span>
-                            <i class="bi bi-pencil edit-icon"></i>
-                        </span>
-                    </div>
-                    <div class="col-6">
-                        <div class="detail-label">Exclusividad</div>
-                        <span class="editable-field" data-field="exclusividad" data-type="toggle" data-value="<?= $p['exclusividad'] ?>">
-                            <?= $p['exclusividad'] ? '<i class="bi bi-check-circle text-success"></i> Sí' : '<span class="text-muted">No</span>' ?>
-                            <i class="bi bi-pencil edit-icon"></i>
-                        </span>
-                    </div>
+                    <?php /* comision y exclusividad eliminados de esta vista */ ?>
                 </div>
 
                 <!-- Mini Calendar -->
                 <hr>
                 <div class="mini-cal-wrapper">
                     <div id="miniCalendar"></div>
-                    <div id="miniCalTasks" class="task-list-day mt-2" style="display:none;">
-                        <h6 class="small fw-bold mb-2" id="miniCalDate"></h6>
-                        <div id="miniCalTaskList"></div>
-                        <button class="btn btn-sm btn-outline-primary w-100 mt-2" id="btnSetProxContacto">
+                    <div id="miniCalTasks" class="mt-2" style="display:none;">
+                        <h6 class="small fw-bold mb-1" id="miniCalDate"></h6>
+                        <div id="miniCalTaskList" class="task-list-day"></div>
+                        <button class="btn btn-sm btn-outline-primary w-100 mt-2" id="btnSetProxContacto" style="flex-shrink:0;">
                             <i class="bi bi-calendar-plus"></i> Fijar como próximo contacto
                         </button>
                     </div>
@@ -515,7 +541,11 @@ $tiposHistorial = [
                         ['field' => 'precio_propietario', 'label' => 'Precio Propietario', 'type' => 'number', 'col' => 'col-md-4', 'format' => 'precio'],
                         ['field' => 'superficie', 'label' => 'Superficie', 'type' => 'number', 'col' => 'col-md-3', 'format' => 'superficie'],
                         ['field' => 'habitaciones', 'label' => 'Habitaciones', 'type' => 'number', 'col' => 'col-md-3'],
-                        ['field' => 'direccion', 'label' => 'Dirección', 'type' => 'text', 'col' => 'col-md-6'],
+                        ['field' => 'direccion',   'label' => 'Dirección',  'type' => 'text', 'col' => 'col-md-4'],
+                        ['field' => 'numero',      'label' => 'Nº',         'type' => 'text', 'col' => 'col-md-2'],
+                        ['field' => 'piso_puerta', 'label' => 'Piso',       'type' => 'text', 'col' => 'col-md-2'],
+                        ['field' => 'escalera',    'label' => 'Escalera',   'type' => 'text', 'col' => 'col-md-2'],
+                        ['field' => 'puerta',      'label' => 'Puerta',     'type' => 'text', 'col' => 'col-md-2'],
                         ['field' => 'barrio', 'label' => 'Barrio / Zona', 'type' => 'text', 'col' => 'col-md-3'],
                         ['field' => 'localidad', 'label' => 'Localidad', 'type' => 'text', 'col' => 'col-md-3'],
                         ['field' => 'provincia', 'label' => 'Provincia', 'type' => 'text', 'col' => 'col-md-3'],
@@ -552,23 +582,103 @@ $tiposHistorial = [
             </div>
         </div>
 
+        <!-- Historial de Propiedad -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-house-gear"></i> Historial de Propiedad</span>
+                <span class="badge bg-secondary"><?= count($historialPropiedad) ?></span>
+            </div>
+            <div class="card-body">
+                <!-- Formulario añadir entrada -->
+                <div class="add-contact-form mb-3">
+                    <div class="prop-type-selector" id="propTipoSelector">
+                        <?php foreach ($tiposHistorialPropiedad as $tKey => $tData): ?>
+                        <button type="button" class="prop-type-btn <?= $tKey === 'modificacion' ? 'active' : '' ?>" data-tipo="<?= $tKey ?>">
+                            <i class="bi <?= $tData['icon'] ?>"></i> <?= $tData['label'] ?>
+                        </button>
+                        <?php endforeach; ?>
+                    </div>
+                    <div id="propPrecioFields" class="row g-2 mb-2" style="display:none!important;">
+                        <div class="col-6">
+                            <input type="number" id="propPrecioAnterior" class="form-control form-control-sm" placeholder="Precio anterior (€)" min="0" step="0.01">
+                        </div>
+                        <div class="col-6">
+                            <input type="number" id="propPrecioNuevo" class="form-control form-control-sm" placeholder="Precio nuevo (€)" min="0" step="0.01">
+                        </div>
+                    </div>
+                    <input type="hidden" id="propTipoSeleccionado" value="modificacion">
+                    <div class="d-flex gap-2">
+                        <input type="text" id="propDescripcion" class="form-control form-control-sm" placeholder="Descripción del cambio (opcional)">
+                        <button type="button" class="btn btn-primary btn-sm" id="btnAddPropHistorial" style="white-space:nowrap;">
+                            <i class="bi bi-plus-lg"></i> Registrar
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Timeline propiedad -->
+                <div id="propHistorialContainer">
+                    <?php if (empty($historialPropiedad)): ?>
+                        <p class="text-muted mb-0 small" id="emptyPropHistorial">Sin historial de propiedad registrado</p>
+                    <?php else: ?>
+                        <?php foreach ($historialPropiedad as $hp):
+                            $hpTipo = $tiposHistorialPropiedad[$hp['tipo']] ?? $tiposHistorialPropiedad['otro'];
+                            $iniciales = strtoupper(mb_substr($hp['usuario_nombre'] ?? '?', 0, 1) . mb_substr($hp['usuario_apellidos'] ?? '', 0, 1));
+                        ?>
+                        <div class="prop-hist-entry" data-id="<?= $hp['id'] ?>">
+                            <div class="prop-hist-icon" style="background: <?= $hpTipo['color'] ?>;">
+                                <i class="bi <?= $hpTipo['icon'] ?>"></i>
+                            </div>
+                            <div class="prop-hist-content">
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <span class="fw-semibold small"><?= $hpTipo['label'] ?></span>
+                                    <?php if ($hp['precio_anterior'] !== null || $hp['precio_nuevo'] !== null): ?>
+                                        <span class="price-change" style="color: <?= $hpTipo['color'] ?>;">
+                                            <?php if ($hp['precio_anterior'] !== null): ?>
+                                                <?= number_format($hp['precio_anterior'], 0, ',', '.') ?> €
+                                            <?php endif; ?>
+                                            <?php if ($hp['precio_anterior'] !== null && $hp['precio_nuevo'] !== null): ?>
+                                                <i class="bi bi-arrow-right"></i>
+                                            <?php endif; ?>
+                                            <?php if ($hp['precio_nuevo'] !== null): ?>
+                                                <?= number_format($hp['precio_nuevo'], 0, ',', '.') ?> €
+                                            <?php endif; ?>
+                                        </span>
+                                    <?php endif; ?>
+                                    <button class="btn btn-sm btn-link text-danger p-0 ms-auto" onclick="deletePropHistorial(<?= $hp['id'] ?>)" title="Eliminar">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                </div>
+                                <?php if ($hp['descripcion']): ?>
+                                    <div class="small text-body-secondary mt-1"><?= nl2br(sanitize($hp['descripcion'])) ?></div>
+                                <?php endif; ?>
+                                <div class="prop-hist-meta">
+                                    <?= sanitize(($hp['usuario_nombre'] ?? '') . ' ' . mb_substr($hp['usuario_apellidos'] ?? '', 0, 1)) ?>. &middot; <?= date('d/m/Y H:i', strtotime($hp['created_at'])) ?>
+                                </div>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+
+        <!-- Próxima Acción -->
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-lightning-charge"></i> Próxima Acción</div>
+            <div class="card-body">
+                <span class="editable-field d-block" data-field="proxima_accion" data-type="textarea" data-value="<?= sanitize($p['proxima_accion'] ?? '') ?>">
+                    <?= !empty($p['proxima_accion']) ? nl2br(sanitize($p['proxima_accion'])) : '<span class="text-muted">¿Qué hay que hacer con este prospecto?</span>' ?>
+                    <i class="bi bi-pencil edit-icon"></i>
+                </span>
+            </div>
+        </div>
+
         <!-- Notas (Editable) -->
         <div class="card mb-4">
             <div class="card-header"><i class="bi bi-chat-text"></i> Notas</div>
             <div class="card-body">
                 <span class="editable-field d-block" data-field="notas" data-type="textarea" data-value="<?= sanitize($p['notas'] ?? '') ?>">
                     <?= $p['notas'] ? nl2br(sanitize($p['notas'])) : '<span class="text-muted">Sin notas</span>' ?>
-                    <i class="bi bi-pencil edit-icon"></i>
-                </span>
-            </div>
-        </div>
-
-        <!-- Reformas (Editable) -->
-        <div class="card mb-4">
-            <div class="card-header"><i class="bi bi-tools"></i> Reformas</div>
-            <div class="card-body">
-                <span class="editable-field d-block" data-field="reformas" data-type="textarea" data-value="<?= sanitize($p['reformas'] ?? '') ?>">
-                    <?= $p['reformas'] ? nl2br(sanitize($p['reformas'])) : '<span class="text-muted">Sin reformas registradas</span>' ?>
                     <i class="bi bi-pencil edit-icon"></i>
                 </span>
             </div>
@@ -844,11 +954,18 @@ function saveInlineField(field, value, el, originalHTML) {
 let selectedCalDate = null;
 
 if (typeof flatpickr === 'function' && document.getElementById('miniCalendar')) {
+    const defaultCalDate = '<?= !empty($p['fecha_proximo_contacto']) ? $p['fecha_proximo_contacto'] : date('Y-m-d') ?>';
     flatpickr('#miniCalendar', {
         inline: true,
         locale: 'es',
         dateFormat: 'Y-m-d',
-        defaultDate: '<?= $p['fecha_proximo_contacto'] ?? 'today' ?>',
+        defaultDate: defaultCalDate,
+        onReady: function(selectedDates, dateStr) {
+            // Cargar eventos del día inicial automáticamente
+            const fecha = dateStr || defaultCalDate;
+            selectedCalDate = fecha;
+            loadTasksForDay(fecha);
+        },
         onChange: function(selectedDates, dateStr) {
             selectedCalDate = dateStr;
             loadTasksForDay(dateStr);
@@ -860,6 +977,12 @@ if (typeof flatpickr === 'function' && document.getElementById('miniCalendar')) 
         miniCalendarContainer.innerHTML = '<div class="alert alert-warning py-2 px-3 mb-0 small">No se pudo cargar el calendario en este momento.</div>';
     }
 }
+
+const tipoEventoIconos = {
+    tarea: 'bi-check2-square', llamada: 'bi-telephone', visita: 'bi-house-door',
+    reunion: 'bi-people', email: 'bi-envelope', personal: 'bi-person',
+    otro: 'bi-calendar-event'
+};
 
 function loadTasksForDay(fecha) {
     if (!document.getElementById('miniCalTasks') || !document.getElementById('miniCalTaskList') || !document.getElementById('miniCalDate')) {
@@ -873,17 +996,28 @@ function loadTasksForDay(fecha) {
     .then(r => r.json())
     .then(data => {
         const list = document.getElementById('miniCalTaskList');
-        if (data.tareas && data.tareas.length > 0) {
-            list.innerHTML = data.tareas.map(t => {
-                const colors = {pendiente: '#f59e0b', en_progreso: '#3b82f6', completada: '#10b981'};
-                return `<div class="task-item" style="background: ${colors[t.estado] || '#6b7280'}15; border-left: 3px solid ${colors[t.estado] || '#6b7280'}">
-                    <i class="bi bi-check2-square" style="color: ${colors[t.estado] || '#6b7280'}"></i>
-                    <span>${t.titulo}</span>
+        if (!list) return;
+        const eventos = (data && (data.eventos || data.tareas)) || [];
+        if (eventos.length > 0) {
+            list.innerHTML = eventos.map(ev => {
+                const color = ev.color || '#6b7280';
+                const icono = tipoEventoIconos[ev.tipo] || 'bi-calendar-event';
+                const hora = ev.hora || '';
+                return `<div class="task-item" style="background:${color}15; border-left:3px solid ${color}">
+                    <i class="bi ${icono}" style="color:${color}; flex-shrink:0;"></i>
+                    <div style="min-width:0; overflow:hidden; flex:1;">
+                        ${hora ? `<span class="fw-semibold me-1" style="color:${color}; font-size:0.75rem;">${hora}</span>` : ''}
+                        <span style="font-size:0.8rem;">${ev.titulo}</span>
+                    </div>
                 </div>`;
             }).join('');
         } else {
-            list.innerHTML = '<div class="text-muted small text-center py-2"><i class="bi bi-calendar-x"></i> Sin tareas este día</div>';
+            list.innerHTML = '<div class="text-muted small text-center py-2"><i class="bi bi-calendar-x"></i> Sin eventos este día</div>';
         }
+    })
+    .catch(() => {
+        const list = document.getElementById('miniCalTaskList');
+        if (list) list.innerHTML = '<div class="text-muted small text-center py-2"><i class="bi bi-exclamation-circle"></i> No se pudo cargar</div>';
     });
 }
 
@@ -906,6 +1040,121 @@ if (btnSetProxContacto) btnSetProxContacto.addEventListener('click', function() 
         }
     });
 });
+
+// ─────────────────────────────────
+// HISTORIAL DE PROPIEDAD
+// ─────────────────────────────────
+const tiposHP = <?= json_encode($tiposHistorialPropiedad) ?>;
+const precioTipos = ['subida_precio', 'bajada_precio'];
+
+document.querySelectorAll('.prop-type-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.prop-type-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        document.getElementById('propTipoSeleccionado').value = this.dataset.tipo;
+        const precioFields = document.getElementById('propPrecioFields');
+        if (precioFields) {
+            precioFields.style.setProperty('display', precioTipos.includes(this.dataset.tipo) ? 'flex' : 'none', 'important');
+        }
+    });
+});
+
+document.getElementById('btnAddPropHistorial').addEventListener('click', function() {
+    const tipo = document.getElementById('propTipoSeleccionado').value;
+    const descripcion = document.getElementById('propDescripcion').value.trim();
+    const precioAnterior = document.getElementById('propPrecioAnterior').value;
+    const precioNuevo = document.getElementById('propPrecioNuevo').value;
+
+    const btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    const body = new FormData();
+    body.append('csrf_token', CSRF_TOKEN);
+    body.append('accion', 'add_historial_propiedad');
+    body.append('prospecto_id', PROSPECTO_ID);
+    body.append('tipo', tipo);
+    body.append('descripcion', descripcion);
+    body.append('precio_anterior', precioAnterior);
+    body.append('precio_nuevo', precioNuevo);
+
+    fetch(API_URL, { method: 'POST', body })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plus-lg"></i> Registrar';
+        if (data.success) {
+            const e = data.entrada;
+            const tc = tiposHP[e.tipo] || tiposHP['otro'];
+            const empty = document.getElementById('emptyPropHistorial');
+            if (empty) empty.remove();
+
+            let precioHtml = '';
+            if (e.precio_anterior || e.precio_nuevo) {
+                precioHtml = `<span class="price-change" style="color:${tc.color};">`;
+                if (e.precio_anterior) precioHtml += `${Number(e.precio_anterior).toLocaleString('es-ES')} €`;
+                if (e.precio_anterior && e.precio_nuevo) precioHtml += ` <i class="bi bi-arrow-right"></i> `;
+                if (e.precio_nuevo) precioHtml += `${Number(e.precio_nuevo).toLocaleString('es-ES')} €`;
+                precioHtml += '</span>';
+            }
+
+            const html = `<div class="prop-hist-entry" data-id="${e.id}" style="animation:fadeIn 0.3s ease;">
+                <div class="prop-hist-icon" style="background:${tc.color};"><i class="bi ${tc.icon}"></i></div>
+                <div class="prop-hist-content">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="fw-semibold small">${tc.label}</span>
+                        ${precioHtml}
+                        <button class="btn btn-sm btn-link text-danger p-0 ms-auto" onclick="deletePropHistorial(${e.id})" title="Eliminar"><i class="bi bi-x-lg"></i></button>
+                    </div>
+                    ${e.descripcion ? `<div class="small text-body-secondary mt-1">${e.descripcion.replace(/\n/g,'<br>')}</div>` : ''}
+                    <div class="prop-hist-meta">${e.usuario_iniciales} ${e.usuario} &middot; ${e.fecha}</div>
+                </div>
+            </div>`;
+            document.getElementById('propHistorialContainer').insertAdjacentHTML('afterbegin', html);
+            document.getElementById('propDescripcion').value = '';
+            document.getElementById('propPrecioAnterior').value = '';
+            document.getElementById('propPrecioNuevo').value = '';
+            const badge = document.querySelector('.card-header:has(#propHistorialContainer) .badge.bg-secondary, [data-prop-hist-badge]');
+            // update badge count
+            const headers = document.querySelectorAll('.card-header');
+            headers.forEach(h => {
+                if (h.textContent.includes('Historial de Propiedad')) {
+                    const b = h.querySelector('.badge');
+                    if (b) b.textContent = parseInt(b.textContent || '0') + 1;
+                }
+            });
+        } else {
+            alert('Error: ' + (data.error || 'Error desconocido'));
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plus-lg"></i> Registrar';
+        alert('Error de conexión');
+    });
+});
+
+function deletePropHistorial(id) {
+    if (!confirm('¿Eliminar esta entrada del historial?')) return;
+    const body = new FormData();
+    body.append('csrf_token', CSRF_TOKEN);
+    body.append('accion', 'delete_historial_propiedad');
+    body.append('entrada_id', id);
+    fetch(API_URL, { method: 'POST', body })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            const el = document.querySelector(`.prop-hist-entry[data-id="${id}"]`);
+            if (el) { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }
+            document.querySelectorAll('.card-header').forEach(h => {
+                if (h.textContent.includes('Historial de Propiedad')) {
+                    const b = h.querySelector('.badge');
+                    if (b) b.textContent = Math.max(0, parseInt(b.textContent) - 1);
+                }
+            });
+        }
+    });
+}
 
 // ─────────────────────────────────
 // HISTORIAL DE CONTACTOS

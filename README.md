@@ -1,463 +1,297 @@
-# Tinoprop
+# TinoProp CRM
 
-CRM Inmobiliario completo para el mercado inmobiliario español. Desarrollado en PHP + MySQL, compatible con Hostinger y hosting compartido.
+> **Software propietario — Todos los derechos reservados.**  
+> Consulta el archivo [LICENSE](./LICENSE) antes de usar, copiar o distribuir.
 
-## Requisitos
-
-- PHP 7.4+ (recomendado 8.0+)
-- MySQL 5.7+ / MariaDB 10.3+
-- Apache con mod_rewrite (incluido en Hostinger)
-- Sin dependencias externas (no requiere Composer)
-
-## Instalacion
-
-1. **Subir archivos** al hosting (via FTP o gestor de archivos de Hostinger)
-2. **Configurar base de datos**: Crear un archivo `.env` en la raiz:
-   ```
-   cp .env.example .env
-   ```
-   Edita `.env` con tus credenciales:
-   ```
-   DB_HOST=localhost
-   DB_NAME=tu_base_datos
-   DB_USER=tu_usuario
-   DB_PASS=tu_contraseña
-   APP_URL=https://tudominio.com/crm
-    APP_ENV=production
-    INSTALLER_KEY=una_clave_larga_para_instaladores
-    CRON_BACKUP_KEY=otra_clave_larga_para_backups
-    CHAT_SIGNING_KEY=clave_privada_para_chat
-    WHATSAPP_APP_SECRET=app_secret_de_meta
-   ```
-3. **Ejecutar instalador** accediendo a `https://tudominio.com/crm/install.php?install_key=TU_INSTALLER_KEY`
-4. **Ejecutar instaladores de módulos** (uno por uno desde el navegador):
-   - `install_email.php` — Módulo de Email
-   - `install_campanas.php` — Campañas Drip
-   - `install_plantillas.php` — Plantillas de Email
-   - `install_reputacion.php` — Gestión de Reputación
-   - `install_trigger_links.php` — Trigger Links
-   - `install_social.php` — Redes Sociales, Blog, Medios, Contratos
-   - `install_formularios.php` — Formularios de captación
-   - `install_marketing_utm.php` — UTM Tracking
-5. **Acceder** con las credenciales por defecto:
-   - Email: `admin@inmocrm.es`
-   - Password: `admin123`
-6. **Cambiar contraseña** del administrador inmediatamente
-7. **Eliminar** todos los `install*.php` del servidor
-
-## Modulos
-
-| Modulo | Descripcion |
-|--------|-------------|
-| **Dashboard** | KPIs, resumen financiero, proximas visitas, tareas urgentes, actividad reciente |
-| **Marketing** | Centro de comando: KPIs, campañas, trigger links, reputación, analytics |
-| **Propiedades** | CRUD completo con 40+ campos, fotos, busqueda avanzada, matching |
-| **Clientes** | Gestion de contactos (comprador, vendedor, inquilino, propietario, inversor) |
-| **Prospectos** | Pipeline de captación, inline editing, importación CSV |
-| **Campañas** | Secuencias drip de email/SMS con pasos y condiciones |
-| **Email** | Bandeja de entrada, envío, plantillas con variables dinámicas |
-| **Visitas** | Programacion de visitas, estado, valoracion |
-| **Tareas** | Gestion de tareas con prioridad, vencimiento, asignacion a agentes |
-| **Documentos** | Subida y gestion de contratos, escrituras, certificados |
-| **Finanzas** | Comisiones, honorarios, gastos, IVA español (21%, 10%, 4%) |
-| **Portales** | Control de publicacion en Idealista, Fotocasa, Habitaclia, Pisos.com, etc. |
-| **Social** | Planificación de posts para Facebook, Instagram, LinkedIn, Twitter |
-| **Formularios** | Constructor de formularios embebibles con captación de leads |
-| **Funnels** | Editor visual de embudos de venta |
-| **Landing Pages** | Creación de landing pages para campañas |
-| **Trigger Links** | Enlaces rastreables con acciones automáticas al hacer clic |
-| **Reputación** | Solicitud y seguimiento de reseñas Google |
-| **Blog** | CMS para publicación de artículos con SEO |
-| **A/B Testing** | Framework para tests A/B de campañas |
-| **Informes** | Estadisticas de propiedades, clientes, visitas, finanzas, ranking de agentes |
-| **Usuarios** | Gestion de agentes con roles (admin/agente) |
+CRM inmobiliario completo desarrollado a medida para el mercado español. Cubre todo el ciclo comercial de una agencia inmobiliaria: captación de propietarios, gestión de clientes y compradores, pipeline de ventas, marketing automatizado, seguimiento financiero e integraciones con portales y herramientas externas.
 
 ---
 
-## 🔧 Guía de Integraciones
+## Índice
 
-### 1. Cron para Campañas Drip (Ejecución Automática)
-
-Las campañas drip necesitan un cron job que procese la cola de envíos. Crea el archivo `cron/campanas.php`:
-
-**Lógica que debe tener:**
-
-```php
-<?php
-// cron/campanas.php — Ejecutar cada 5 minutos via cron
-require_once __DIR__ . '/../config/database.php';
-require_once __DIR__ . '/../includes/email.php';
-
-$db = getDB();
-
-// 1. Buscar contactos de campañas activas que les toque recibir un paso
-$contactos = $db->query("
-    SELECT cc.*, c.nombre, c.apellidos, c.email, c.telefono,
-           camp.nombre as campana_nombre, camp.tipo as campana_tipo
-    FROM campana_contactos cc
-    JOIN clientes c ON cc.cliente_id = c.id
-    JOIN campanas camp ON cc.campana_id = camp.id
-    WHERE cc.estado = 'activo'
-      AND cc.proximo_envio <= NOW()
-      AND camp.estado = 'activa'
-    LIMIT 50
-")->fetchAll();
-
-foreach ($contactos as $cc) {
-    // 2. Obtener el paso actual
-    $paso = $db->prepare("
-        SELECT * FROM campana_pasos 
-        WHERE campana_id = ? AND orden = ?
-    ");
-    $paso->execute([$cc['campana_id'], $cc['paso_actual'] + 1]);
-    $paso = $paso->fetch();
-    
-    if (!$paso) {
-        // Ya completó todos los pasos
-        $db->prepare("UPDATE campana_contactos SET estado='completado' WHERE id=?")
-           ->execute([$cc['id']]);
-        continue;
-    }
-    
-    // 3. Ejecutar según tipo de paso
-    if ($paso['tipo'] === 'email' && $cc['email']) {
-        // Reemplazar variables
-        $cuerpo = str_replace(
-            ['{{nombre}}', '{{apellidos}}', '{{email}}'],
-            [$cc['nombre'], $cc['apellidos'], $cc['email']],
-            $paso['contenido']
-        );
-        $asunto = str_replace('{{nombre}}', $cc['nombre'], $paso['asunto']);
-        
-        // Enviar email (usa tu función enviarEmail de includes/email.php)
-        enviarEmail($cc['email'], $asunto, $cuerpo);
-        
-        // Actualizar estadísticas
-        $db->prepare("UPDATE campana_pasos SET enviados = enviados + 1 WHERE id=?")
-           ->execute([$paso['id']]);
-        $db->prepare("UPDATE campanas SET enviados = enviados + 1 WHERE id=?")
-           ->execute([$cc['campana_id']]);
-    }
-    
-    if ($paso['tipo'] === 'esperar') {
-        // Solo avanza al siguiente paso después de esperar
-    }
-    
-    // 4. Avanzar al siguiente paso
-    $siguientePaso = $db->prepare("
-        SELECT esperar_minutos FROM campana_pasos 
-        WHERE campana_id = ? AND orden = ?
-    ");
-    $siguientePaso->execute([$cc['campana_id'], $cc['paso_actual'] + 2]);
-    $sig = $siguientePaso->fetch();
-    
-    $proximoEnvio = $sig 
-        ? date('Y-m-d H:i:s', strtotime('+' . ($sig['esperar_minutos'] ?: 1440) . ' minutes'))
-        : null;
-    
-    $db->prepare("UPDATE campana_contactos SET paso_actual = paso_actual + 1, proximo_envio = ? WHERE id=?")
-       ->execute([$proximoEnvio, $cc['id']]);
-}
-
-echo date('Y-m-d H:i:s') . " — Procesados: " . count($contactos) . " contactos\n";
-```
-
-**Configurar en Hostinger:**
-
-1. Ve al panel de Hostinger → **Avanzado** → **Cron Jobs**
-2. Añade: `*/5 * * * * php /home/u908766211/domains/tinoprop.es/public_html/crm/cron/campanas.php`
-3. Esto ejecuta cada 5 minutos
+- [Visión general](#visión-general)
+- [Stack técnico](#stack-técnico)
+- [Arquitectura](#arquitectura)
+- [Módulos](#módulos)
+- [Base de datos](#base-de-datos)
+- [Seguridad](#seguridad)
+- [Integraciones](#integraciones)
+- [Características específicas para España](#características-específicas-para-españa)
+- [Licencia](#licencia)
 
 ---
 
-### 2. UTM Tracking (Captación de Fuentes de Leads)
+## Visión general
 
-Para registrar de dónde vienen tus leads, captura los parámetros UTM en tus formularios públicos.
+TinoProp CRM es una plataforma web de gestión inmobiliaria construida en PHP puro sin frameworks ni dependencias externas (sin Composer). Está diseñado para desplegarse en hosting compartido (Hostinger) con un único archivo `.env` como única fuente de configuración.
 
-**Dónde:** En cualquier formulario público (ej: `booking.php`, formularios embebidos, landing pages)
+El sistema cubre dos flujos principales de negocio:
 
-**Cómo:** Añade estos campos hidden al formulario HTML:
+**Captación (Prospectos):** Gestión del ciclo completo desde el primer contacto con un propietario hasta la firma del contrato de captación. Incluye pipeline Kanban, historial de contactos por tipo (llamada, email, visita, WhatsApp), próxima acción, historial de cambios de precio de la propiedad y calendario integrado.
 
-```html
-<input type="hidden" name="utm_source" id="utm_source">
-<input type="hidden" name="utm_medium" id="utm_medium">
-<input type="hidden" name="utm_campaign" id="utm_campaign">
-<script>
-// Auto-rellenar desde la URL
-const params = new URLSearchParams(window.location.search);
-['utm_source','utm_medium','utm_campaign','utm_term','utm_content'].forEach(p => {
-    const el = document.getElementById(p);
-    if (el && params.get(p)) el.value = params.get(p);
-});
-</script>
-```
-
-**En el PHP que procesa el form**, después de crear el prospecto/cliente:
-
-```php
-// Guardar UTM si hay datos
-if (!empty($_POST['utm_source']) || !empty($_POST['utm_medium'])) {
-    $db->prepare("INSERT INTO marketing_utm 
-        (prospecto_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content, landing_url, referrer, ip) 
-        VALUES (?,?,?,?,?,?,?,?,?)")
-    ->execute([
-        $nuevoProspectoId,
-        $_POST['utm_source'] ?? '',
-        $_POST['utm_medium'] ?? '',
-        $_POST['utm_campaign'] ?? '',
-        $_POST['utm_term'] ?? '',
-        $_POST['utm_content'] ?? '',
-        $_SERVER['REQUEST_URI'] ?? '',
-        $_SERVER['HTTP_REFERER'] ?? '',
-        $_SERVER['REMOTE_ADDR'] ?? ''
-    ]);
-}
-```
-
-**Ejemplo de URL con UTM:**
-```
-https://tinoprop.es/booking.php?utm_source=instagram&utm_medium=ads&utm_campaign=pisos_madrid
-```
+**Compraventa (Clientes):** Gestión de compradores, inquilinos, inversores y vendedores con matching automático entre sus preferencias y las propiedades en cartera, seguimiento de visitas y pipeline de cierre.
 
 ---
 
-### 3. WhatsApp Business API
+## Stack técnico
 
-El webhook ya está implementado en `api/whatsapp_webhook.php`. Para conectarlo:
+| Capa | Tecnología |
+|------|-----------|
+| Backend | PHP 8.3 (compatible 8.0+) |
+| Base de datos | MySQL 8 / MariaDB 10.6+ |
+| Frontend | Bootstrap 5.3, Bootstrap Icons, JavaScript vanilla |
+| Calendario | Flatpickr |
+| Hosting | Hostinger (hosting compartido, Apache) |
+| Configuración | Variables de entorno vía `.env` |
+| Autenticación | Sesiones PHP nativas con bcrypt |
+| API externa | Google Calendar API v3, WhatsApp Business API (Meta), Stripe |
 
-1. **Crear app** en [Meta for Developers](https://developers.facebook.com/)
-2. **Activar WhatsApp** en Products → WhatsApp → Getting Started
-3. **Configurar webhook URL**: `https://tinoprop.es/crm/api/whatsapp_webhook.php`
-4. **Verify Token**: El que pongas en tu `.env` como `WHATSAPP_VERIFY_TOKEN`
-5. **Suscribirse** a los campos: `messages`, `message_status`
-
-**Variables de entorno necesarias en `.env`:**
-```
-WHATSAPP_VERIFY_TOKEN=tu_token_secreto
-WHATSAPP_API_TOKEN=tu_bearer_token_de_meta
-WHATSAPP_PHONE_ID=tu_phone_number_id
-```
-
-**Para validar la firma** (seguridad — ahora mismo no se valida), añade esto al inicio de `api/whatsapp_webhook.php`:
-
-```php
-// Validar firma del webhook de Meta
-$signature = $_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '';
-$payload = file_get_contents('php://input');
-$expected = 'sha256=' . hash_hmac('sha256', $payload, getenv('WHATSAPP_APP_SECRET'));
-if (!hash_equals($expected, $signature)) {
-    http_response_code(403);
-    exit('Firma inválida');
-}
-```
+Sin Composer. Sin frameworks PHP. Sin npm. Sin bundlers. Todo el JavaScript es vanilla o CDN.
 
 ---
 
-### 4. Publicación Automática en Redes Sociales
-
-El módulo Social (`modules/social/index.php`) tiene un botón "Publicar" que cambia el estado pero no conecta con APIs. Para publicar de verdad:
-
-#### Facebook / Instagram (Meta Graph API)
-
-1. Crea una **App de Meta** en [developers.facebook.com](https://developers.facebook.com/)
-2. Añade el producto **Facebook Login** + **Instagram Graph API**
-3. Genera un **Page Access Token** de larga duración
-4. Guarda el token en la tabla `social_cuentas` (campo `access_token`)
-
-**Código para publicar en Facebook Page** (añadir en `modules/social/index.php`, dentro del `if ($a === 'publicar')`):
-
-```php
-if ($a === 'publicar') {
-    $pid = intval(post('pid'));
-    $post = $db->prepare("SELECT * FROM social_posts WHERE id=?");
-    $post->execute([$pid]);
-    $post = $post->fetch();
-    
-    $plataformas = json_decode($post['plataformas'], true) ?: [];
-    
-    foreach ($plataformas as $plat) {
-        $cuenta = $db->prepare("SELECT * FROM social_cuentas WHERE plataforma=? AND activo=1 LIMIT 1");
-        $cuenta->execute([$plat]);
-        $cuenta = $cuenta->fetch();
-        if (!$cuenta) continue;
-        
-        if ($plat === 'facebook') {
-            $ch = curl_init("https://graph.facebook.com/v18.0/{$cuenta['page_id']}/feed");
-            curl_setopt_array($ch, [
-                CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => http_build_query([
-                    'message' => $post['contenido'],
-                    'link' => $post['enlace'] ?: null,
-                    'access_token' => $cuenta['access_token']
-                ]),
-                CURLOPT_RETURNTRANSFER => true,
-            ]);
-            $resp = curl_exec($ch);
-            curl_close($ch);
-            
-            $db->prepare("UPDATE social_posts SET respuesta_api=? WHERE id=?")
-               ->execute([$resp, $pid]);
-        }
-        
-        if ($plat === 'instagram') {
-            // Instagram requiere imagen. Paso 1: crear media container
-            $ch = curl_init("https://graph.facebook.com/v18.0/{$cuenta['page_id']}/media");
-            curl_setopt_array($ch, [
-                CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => http_build_query([
-                    'image_url' => $post['imagen_url'],
-                    'caption' => $post['contenido'],
-                    'access_token' => $cuenta['access_token']
-                ]),
-                CURLOPT_RETURNTRANSFER => true,
-            ]);
-            $resp = json_decode(curl_exec($ch), true);
-            curl_close($ch);
-            
-            // Paso 2: publicar
-            if (!empty($resp['id'])) {
-                $ch = curl_init("https://graph.facebook.com/v18.0/{$cuenta['page_id']}/media_publish");
-                curl_setopt_array($ch, [
-                    CURLOPT_POST => true,
-                    CURLOPT_POSTFIELDS => http_build_query([
-                        'creation_id' => $resp['id'],
-                        'access_token' => $cuenta['access_token']
-                    ]),
-                    CURLOPT_RETURNTRANSFER => true,
-                ]);
-                curl_exec($ch);
-                curl_close($ch);
-            }
-        }
-    }
-    
-    $db->prepare("UPDATE social_posts SET estado='publicado', publicado_at=NOW() WHERE id=?")
-       ->execute([$pid]);
-}
-```
-
-#### LinkedIn
-
-1. Crea app en [linkedin.com/developers](https://www.linkedin.com/developers/)
-2. Solicita los scopes: `w_member_social`, `w_organization_social`
-3. Genera un OAuth Access Token
-4. Endpoint: `POST https://api.linkedin.com/v2/ugcPosts`
-
----
-
-### 5. Google Reviews (Enlace Directo)
-
-Para obtener tu enlace de Google Reviews:
-
-1. Ve a [Google Business Profile](https://business.google.com/)
-2. Selecciona tu negocio
-3. Clic en **"Pedir reseñas"** → Copia el enlace
-4. Alternativamente: `https://search.google.com/local/writereview?placeid=TU_PLACE_ID`
-5. Pega el enlace en **Marketing → Reputación → Configuración → Enlace Google Reviews**
-
-Para encontrar tu `Place ID`:
-- Ve a [developers.google.com/maps/documentation/places/web-service/place-id-finder](https://developers.google.com/maps/documentation/places/web-service/place-id-finder)
-- Busca tu negocio y copia el Place ID
-
----
-
-### 6. SMS vía Twilio
-
-El módulo SMS (`modules/sms/`) ya tiene la integración básica. Necesitas:
-
-1. **Crear cuenta** en [twilio.com](https://www.twilio.com/)
-2. **Obtener credenciales**: Account SID, Auth Token, y un número de teléfono
-3. **Configurar** en el CRM: Módulos → SMS → Configuración
-4. Rellena: Account SID, Auth Token, Número remitente (formato `+34XXXXXXXXX`)
-
-**Variables de entorno opcionales en `.env`:**
-```
-TWILIO_SID=tu_account_sid
-TWILIO_TOKEN=tu_auth_token
-TWILIO_FROM=+34612345678
-```
-
----
-
-## Caracteristicas especificas para España
-
-- Referencia catastral
-- Certificacion energetica (A-G, en tramite, exento)
-- IVA español configurable (21%, 10%, 4%, exento)
-- 52 provincias espanolas
-- Portales inmobiliarios espanoles (Idealista, Fotocasa, etc.)
-- DNI/NIE/CIF para clientes
-- Tipos de inmueble del mercado espanol
-
-## Seguridad
-
-- Passwords encriptados con `password_hash()` (bcrypt)
-- Proteccion CSRF en todos los formularios
-- Sanitizacion de inputs (XSS)
-- Prepared statements (SQL injection)
-- Protección contra fuerza bruta (bloqueo tras 5 intentos)
-- `.htaccess` para proteger directorios sensibles
-- Bloqueo de ejecucion PHP en carpeta de uploads
-- Roles de usuario (admin/agente)
-- Variables de entorno via `.env` para credenciales
-- Validación de firma en webhooks (WhatsApp)
-
-## Estructura de archivos
+## Arquitectura
 
 ```
 CRM/
-├── config/database.php       # Configuracion BD y app (lee .env)
-├── .env                      # Credenciales (NO subir a Git)
-├── .env.example              # Template de credenciales
-├── includes/                 # Core del sistema
-│   ├── auth.php             # Autenticacion
-│   ├── helpers.php          # Funciones auxiliares
-│   ├── email.php            # Envío de emails (SMTP / mail)
-│   ├── export.php           # Exportación CSV/JSON
-│   ├── validators.php       # Validadores españoles (DNI/NIE/CIF)
-│   ├── header.php           # Template header + sidebar
-│   └── footer.php           # Template footer
-├── modules/                  # Modulos funcionales
-│   ├── marketing/           # Centro de comando marketing
-│   ├── campanas/            # Campañas drip email/SMS
-│   ├── email/               # Bandeja email + plantillas
-│   ├── social/              # Redes sociales
-│   ├── propiedades/         # CRUD propiedades
-│   ├── prospectos/          # Pipeline de captación
-│   ├── clientes/            # CRUD clientes
-│   ├── visitas/             # Gestion visitas
-│   ├── tareas/              # Gestion tareas
-│   ├── documentos/          # Gestion documentos
-│   ├── finanzas/            # Tracking financiero
-│   ├── portales/            # Publicacion portales
-│   ├── formularios/         # Formularios de captación
-│   ├── funnels/             # Embudos de venta
-│   ├── landing/             # Landing pages
-│   ├── blog/                # CMS Blog
-│   ├── informes/            # Estadisticas
-│   └── usuarios/            # Gestion usuarios
-├── api/                      # Endpoints API
-│   ├── prospectos.php       # API AJAX prospectos
-│   ├── whatsapp_webhook.php # Webhook WhatsApp Business
-│   └── chat.php             # API chat web
-├── cron/                     # Tareas programadas
-│   └── backup.php           # Backup automático BD
+├── config/
+│   └── database.php          # Bootstrap: DB, constantes, handlers de error
+├── includes/                 # Núcleo compartido
+│   ├── auth.php              # Autenticación, sesiones, roles
+│   ├── helpers.php           # CSRF, flash, sanitize, formateo, paginación
+│   ├── ajustes_helper.php    # Ajustes por usuario (BD)
+│   ├── validators.php        # Validadores españoles (DNI/NIE/CIF, teléfono, CP)
+│   ├── email.php             # Envío SMTP/mail() con plantillas
+│   ├── export.php            # Exportación CSV, PDF, JSON
+│   ├── encryption.php        # Cifrado AES para datos sensibles
+│   ├── google_calendar_helper.php  # OAuth2 + Google Calendar API
+│   ├── automatizaciones_engine.php # Motor de triggers y automatizaciones
+│   ├── custom_fields_helper.php    # Campos personalizados dinámicos
+│   ├── header.php            # Template principal + sidebar + nav
+│   └── footer.php            # Cierre de layout
+├── modules/                  # Módulos funcionales (cada uno autocontenido)
+│   ├── prospectos/
+│   ├── clientes/
+│   ├── propiedades/
+│   ├── visitas/
+│   ├── tareas/
+│   ├── calendario/
+│   ├── finanzas/
+│   ├── marketing/
+│   ├── campanas/
+│   ├── email/
+│   ├── social/
+│   ├── formularios/
+│   ├── funnels/
+│   ├── landing/
+│   ├── blog/
+│   ├── portales/
+│   ├── documentos/
+│   ├── contratos/
+│   ├── presupuestos/
+│   ├── pagos/
+│   ├── informes/
+│   ├── pipelines/
+│   ├── automatizaciones/
+│   ├── ajustes/
+│   └── usuarios/
+├── api/                      # Endpoints AJAX internos y webhooks externos
+│   ├── prospectos.php        # Edición inline, historial, sync calendario
+│   ├── check_duplicate.php   # Validación de duplicados (teléfono/email)
+│   ├── whatsapp_webhook.php  # Webhook Meta WhatsApp Business
+│   └── notificaciones.php    # Polling de notificaciones
+├── cron/                     # Scripts de ejecución programada
+│   ├── purgar_logs.php
+│   ├── secuencia_captacion.php
+│   └── backup.php
 ├── assets/
-│   ├── css/style.css        # Estilos
-│   ├── js/app.js            # JavaScript
-│   └── uploads/             # Archivos subidos
-├── t.php                     # Handler público de Trigger Links
-├── booking.php               # Página pública de reservas
-├── index.php                 # Dashboard
-├── login.php                 # Inicio de sesion
-└── .htaccess                 # Configuracion Apache
+│   ├── css/style.css
+│   ├── js/app.js
+│   └── uploads/              # Archivos subidos (gitignored)
+├── legal/                    # Documentos RGPD generados
+├── index.php                 # Dashboard principal
+├── login.php / logout.php
+├── booking.php               # Página pública de reservas de visita
+├── formulario.php            # Formularios públicos embebibles
+├── funnel.php                # Páginas de funnel públicas
+└── .env                      # Credenciales (gitignored)
 ```
 
-## Tecnologias
+Cada módulo sigue el patrón `index.php` (listado) + `form.php` (crear/editar) + `ver.php` (detalle) + `delete.php` (borrado con confirmación). Los módulos se comunican con el núcleo mediante `includes/` y entre sí sólo a través de la base de datos.
 
-- PHP puro (sin frameworks)
-- MySQL/MariaDB
-- Bootstrap 5 (CDN)
-- Bootstrap Icons
-- HTML5 / CSS3
-- JavaScript vanilla
+---
+
+## Módulos
+
+### Dashboard
+KPIs principales en tiempo real: prospectos activos, propiedades en cartera, clientes activos, visitas del mes. Ganancia potencial total (prospectos + cartera), comisiones cobradas vs. pendientes. Pipeline de captación por etapa, estado de cartera, contador de contactos del mes por tipo. Lista de prospectos urgentes ordenados por días sin contacto y lista de clientes PSI.
+
+### Prospectos (Captación)
+Pipeline de captación con 7 etapas: Nuevo Lead → 1er Contacto → Seguimiento → Visita Programada → Negociando → Captado → Descartado. Cada prospecto incluye:
+- Ficha completa de la propiedad (tipo, operación, superficies, habitaciones, características, dirección con piso/escalera/puerta separados, ref. catastral, certificación energética)
+- Historial de contactos estructurado por tipo (llamada, email, visita, WhatsApp, nota, otro) con fecha y contenido editable
+- Historial de cambios de precio y modificaciones de propiedad con timeline visual
+- Campo "Próxima Acción" libre para el agente
+- Calendario mini integrado (Flatpickr) con todos los eventos del día del agente
+- Temperatura del lead (frío/templado/caliente)
+- Edición inline de todos los campos sin recarga de página
+- Importación masiva CSV con mapeo de columnas
+- Validación en tiempo real de teléfono y email duplicado contra prospectos y clientes
+
+### Clientes (PSI)
+Compradores, vendedores, inquilinos, propietarios e inversores. Múltiples tipos por cliente. Preferencias de búsqueda (zona, presupuesto, habitaciones, superficie, tipo de operación). Timeline de actividad. Tags, documentos RGPD, bulk actions. Matching automático con propiedades en cartera basado en presupuesto, zona y tipo.
+
+### Propiedades (Cartera)
+40+ campos por propiedad: superficies (total/construida/útil/parcela), habitaciones, baños, aseos, planta, extras (ascensor, garaje, trastero, terraza, balcón, jardín, piscina, AA, calefacción), orientación, conservación, certificación energética, ref. catastral, enlace a portal, descripción pública e interna. Galería de fotos con orden arrastrable. Control de publicación en portales externos. Estado (disponible/reservado/vendido/alquilado/retirado).
+
+### Calendario
+Vista mensual con todos los tipos de evento: eventos manuales (color personalizado, todo el día o con hora), visitas programadas, tareas con vencimiento y próximo contacto de prospectos. Admins ven todos los agentes; agentes sólo los propios. Leyenda de colores por tipo. Panel "Hoy" y "Próximos 7 días". Mini-calendario integrado en el detalle de prospecto con carga dinámica de eventos por día.
+
+### Google Calendar (sincronización)
+Cada usuario puede conectar su cuenta personal de Google mediante OAuth 2.0 desde Ajustes. El botón "Sincronizar ahora" exporta los próximos 60 días de visitas, tareas pendientes, próximos contactos de prospectos y eventos de calendario al Google Calendar del usuario. Los eventos ya sincronizados se actualizan en lugar de duplicarse (mapeo por `google_calendar_event_map`). Tokens de refresco automático. Cada usuario gestiona su propia conexión de forma independiente.
+
+### Visitas
+Programación con fecha, hora, agente, cliente, propiedad y notas. Estado de la visita (pendiente/realizada/cancelada). Valoración post-visita. Vista en lista y en calendario.
+
+### Tareas
+Gestión de tareas con prioridad (normal/alta/urgente), estado (pendiente/en progreso/completada), vencimiento, asignación a agente, vinculación opcional a cliente o propiedad. Indicadores de vencimiento en dashboard.
+
+### Finanzas
+Registro de comisiones (venta/alquiler/honorarios), gastos e ingresos. IVA español configurable (21%, 10%, 4%, exento). Estado de cobro (pendiente/cobrado). Filtro por agente. Totales y pendiente de cobro.
+
+### Marketing
+Centro de comando con KPIs de marketing: leads captados, tasa de conversión, fuentes UTM, ranking de agentes. Sub-módulos:
+
+- **Campañas drip**: Secuencias automatizadas de email/SMS con pasos configurables, condiciones de avance y esperas
+- **Email**: Bandeja de entrada, composición, plantillas con variables dinámicas (`{{nombre}}`, `{{email}}`, etc.)
+- **Social**: Planificación y publicación en Facebook, Instagram, LinkedIn, Twitter con calendario editorial
+- **Reputación**: Solicitud automatizada de reseñas Google con seguimiento de respuestas
+- **A/B Testing**: Framework para comparar variantes de campañas
+- **UTM Tracking**: Rastreo de fuente de leads por parámetros UTM en formularios públicos
+- **Landing Pages**: Editor de páginas de aterrizaje para campañas
+- **Funnels**: Editor visual de embudos de captación/venta
+
+### Formularios
+Constructor de formularios de captación embebibles en páginas externas. Cada formulario genera un snippet de código. Los envíos crean prospectos automáticamente y disparan automatizaciones configuradas.
+
+### Automatizaciones
+Motor de triggers y acciones. Triggers: nuevo prospecto, nueva visita, nuevo cliente, cambio de etapa, etc. Acciones: enviar email, crear tarea, actualizar campo, enviar WhatsApp. Log de ejecución por automatización.
+
+### Portales
+Control de publicación de propiedades en Idealista, Fotocasa, Habitaclia, Pisos.com, Infocasa, Milanuncios y Fotocasa. Estado y fecha de última publicación por portal.
+
+### Documentos y Contratos
+Subida y gestión de documentos por propiedad/cliente/prospecto. Plantillas de contratos con variables dinámicas (nombre, dirección, precio...) generadas como PDF. Historial de versiones.
+
+### Presupuestos
+Generación de presupuestos de honorarios. Estado (borrador/enviado/aceptado/rechazado). Exportación a PDF.
+
+### Pagos
+Integración con Stripe para cobro de honorarios online. Webhook de confirmación. Historial de transacciones.
+
+### Pipelines personalizados
+Kanban configurables para cualquier flujo de trabajo (además del pipeline de captación estándar). Columnas, colores y acciones definibles por el administrador.
+
+### Informes
+Estadísticas de propiedades, clientes, visitas y finanzas. Ranking de agentes por captaciones y visitas. Exportación CSV.
+
+### Usuarios y Roles
+Dos roles base: `admin` (acceso total) y `agente` (acceso filtrado a sus propios registros). Sistema de permisos granular por módulo configurable desde la interfaz. Perfil de usuario con foto, cambio de contraseña. Backup manual de BD desde panel de admin.
+
+### Ajustes (por usuario)
+Tema (claro/oscuro), color primario, sidebar compacta, widgets del dashboard, ítems por página, notificaciones por email, Google Calendar (conexión OAuth individual).
+
+### RGPD / Legal
+Generación de documentos de consentimiento RGPD. Registro de consentimiento por cliente. Configuración de datos del responsable del tratamiento.
+
+---
+
+## Base de datos
+
+El esquema tiene más de 60 tablas. Las principales:
+
+| Tabla | Descripción |
+|-------|-------------|
+| `usuarios` | Agentes y admins |
+| `usuario_ajustes` | Preferencias por usuario (clave-valor) |
+| `prospectos` | Pipeline de captación con 60+ campos |
+| `historial_prospectos` | Historial de contactos (llamada/email/visita/whatsapp/nota) |
+| `historial_propiedad_prospecto` | Cambios de precio y modificaciones de propiedad |
+| `clientes` | Compradores, vendedores, inquilinos, inversores |
+| `propiedades` | Cartera de propiedades |
+| `visitas` | Visitas programadas |
+| `tareas` | Tareas con prioridad y asignación |
+| `calendario_eventos` | Eventos manuales de calendario |
+| `google_calendar_tokens` | Tokens OAuth por usuario |
+| `google_calendar_event_map` | Mapeo CRM ↔ Google Calendar |
+| `campanas` | Campañas drip |
+| `campana_pasos` | Pasos de cada campaña |
+| `campana_contactos` | Estado de cada contacto en cada campaña |
+| `finanzas` | Comisiones, gastos, ingresos |
+| `automatizaciones` | Reglas de automatización |
+| `automatizaciones_log` | Log de ejecución |
+| `formularios` | Formularios de captación |
+| `formulario_envios` | Envíos recibidos |
+| `custom_fields` | Campos personalizados por entidad |
+| `whitelabel_config` | Branding personalizado |
+| `notificaciones` | Notificaciones en-app |
+
+---
+
+## Seguridad
+
+- **Autenticación**: `password_hash()` con bcrypt, `session_regenerate_id()` en login
+- **CSRF**: Token de sesión verificado en todos los formularios POST y endpoints AJAX
+- **SQL Injection**: 100% prepared statements PDO, nunca concatenación en queries
+- **XSS**: `htmlspecialchars()` en toda salida de datos de usuario
+- **Fuerza bruta**: Bloqueo de IP tras 5 intentos fallidos (15 min de lockout)
+- **Session hijacking**: Verificación de IP en cada request autenticado
+- **Credenciales**: Todas las claves en `.env`, nunca en código fuente
+- **Instaladores**: Bloqueados en producción sin `INSTALLER_KEY` en `.env`
+- **Uploads**: Directorio con PHP deshabilitado vía `.htaccess`, validación de tipo MIME
+- **Webhooks**: Verificación de firma HMAC (WhatsApp/Meta)
+- **Roles**: Verificación de permisos por módulo y por registro (agente sólo ve los suyos)
+- **OAuth**: State parameter anti-CSRF en flujo Google OAuth
+
+---
+
+## Integraciones
+
+| Servicio | Propósito | Configuración |
+|----------|-----------|---------------|
+| **Google Calendar** | Sincronización de eventos por usuario | OAuth 2.0, credenciales en `.env` |
+| **WhatsApp Business (Meta)** | Recepción de mensajes, chat | Webhook + API Token en `.env` |
+| **Stripe** | Cobro de honorarios online | API Key + Webhook Secret en `.env` |
+| **Twilio** | Envío de SMS | SID + Auth Token en `.env` |
+| **Google Reviews** | Solicitud de reseñas | Place ID configurable desde UI |
+| **Portales inmobiliarios** | Control de publicación | Gestión manual desde módulo Portales |
+| **Facebook / Instagram** | Publicación social | Page Access Token en tabla `social_cuentas` |
+
+---
+
+## Características específicas para España
+
+- 52 provincias españolas en selector
+- Validación de DNI, NIE y CIF con algoritmo oficial
+- Referencia catastral (campo dedicado en propiedades y prospectos)
+- Certificación energética (A–G, en trámite, exento)
+- IVA español (21%, 10%, 4%, exento) en módulo de finanzas
+- Portales inmobiliarios del mercado español (Idealista, Fotocasa, Habitaclia, Pisos.com, etc.)
+- Tipos de inmueble del mercado español (Piso, Chalet, Adosado, Ático, Local, Nave, etc.)
+- Campos de dirección adaptados (escalera, piso, puerta separados)
+- RGPD / LOPD: registro de consentimiento, textos legales configurables, email DPD
+- Zona horaria `Europe/Madrid` en toda la aplicación
+- Formato de fechas español (dd/mm/yyyy)
+- Formato de precios en euros con separadores españoles
+
+---
+
+## Licencia
+
+Este software es **propietario y confidencial**.
+
+Copyright (c) 2024-2026 Valentín De Gennaro. Todos los derechos reservados.
+
+**Queda expresamente prohibido** copiar, distribuir, modificar, sublicenciar o hacer ingeniería inversa sobre este software sin autorización escrita del autor. Consulta el archivo [LICENSE](./LICENSE) para los términos completos.
+
+Para consultas de licenciamiento: valentindegennaro@gmail.com

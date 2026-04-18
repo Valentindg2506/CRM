@@ -263,6 +263,9 @@ $allowedModulesForMenu = getAllowedModulesForCurrentUser();
             </a>
             <hr class="mx-3 my-2">
             <small class="sidebar-section-title">Comunicacion</small>
+            <a href="<?= APP_URL ?>/modules/secuencia_captacion/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'secuencia_captacion') !== false ? 'active' : '' ?>">
+                <i class="bi bi-chat-dots"></i> Secuencia Captacion
+            </a>
             <a href="<?= APP_URL ?>/modules/email/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], '/email/') !== false ? 'active' : '' ?>">
                 <i class="bi bi-envelope"></i> Email
             </a>
