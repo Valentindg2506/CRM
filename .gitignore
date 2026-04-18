@@ -6,10 +6,9 @@
 .env.*.local
 
 # ============================================================
-# ARCHIVOS TEMPORALES DE MIGRACIÓN — ejecutar y borrar
+# SCRIPTS TEMPORALES
 # ============================================================
-migrate_*.php
-install_updates_*.php
+generate_schema.php
 
 # ============================================================
 # LOGS
@@ -24,6 +23,7 @@ backups/
 *.sql
 *.sql.gz
 *.dump
+!database/schema.sql
 
 # ============================================================
 # UPLOADS DE USUARIOS — datos privados
