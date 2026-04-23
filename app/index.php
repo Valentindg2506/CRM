@@ -222,7 +222,9 @@ $tempColors = ['frio' => '#3b82f6', 'templado' => '#f59e0b', 'caliente' => '#ef4
         position: relative;
         overflow: hidden;
         transition: transform 0.2s, box-shadow 0.2s;
-        cursor: default;
+        cursor: pointer;
+        text-decoration: none;
+        display: block;
     }
 
     .kpi-card:hover {
@@ -662,32 +664,32 @@ $tempColors = ['frio' => '#3b82f6', 'templado' => '#f59e0b', 'caliente' => '#ef4
 <!-- KPIs Principales -->
 <div class="row g-3 mb-3 kpi-grid">
     <div class="col-6 col-lg-3 kpi-col">
-        <div class="kpi-card" style="background: linear-gradient(135deg, #1e40af, #3b82f6);">
+        <a href="<?= APP_URL ?>/modules/prospectos/index.php" class="kpi-card" style="background: linear-gradient(135deg, #1e40af, #3b82f6);">
             <div class="kpi-value"><?= $prospActivos ?></div>
             <div class="kpi-label">Prospectos Activos<br><small>(captación)</small></div>
             <i class="bi bi-person-plus kpi-icon"></i>
-        </div>
+        </a>
     </div>
     <div class="col-6 col-lg-3 kpi-col">
-        <div class="kpi-card" style="background: linear-gradient(135deg, #047857, #10b981);">
+        <a href="<?= APP_URL ?>/modules/propiedades/index.php" class="kpi-card" style="background: linear-gradient(135deg, #047857, #10b981);">
             <div class="kpi-value"><?= $propCartera ?></div>
             <div class="kpi-label">Propiedades<br><small>en cartera</small></div>
             <i class="bi bi-house-door kpi-icon"></i>
-        </div>
+        </a>
     </div>
     <div class="col-6 col-lg-3 kpi-col">
-        <div class="kpi-card" style="background: linear-gradient(135deg, #b45309, #f59e0b);">
+        <a href="<?= APP_URL ?>/modules/clientes/index.php" class="kpi-card" style="background: linear-gradient(135deg, #b45309, #f59e0b);">
             <div class="kpi-value"><?= $clientesActivos ?></div>
             <div class="kpi-label">Clientes<br><small>activos</small></div>
             <i class="bi bi-people kpi-icon"></i>
-        </div>
+        </a>
     </div>
     <div class="col-6 col-lg-3 kpi-col">
-        <div class="kpi-card" style="background: linear-gradient(135deg, #7c3aed, #a78bfa);">
+        <a href="<?= APP_URL ?>/modules/visitas/index.php" class="kpi-card" style="background: linear-gradient(135deg, #7c3aed, #a78bfa);">
             <div class="kpi-value"><?= $visitasMes ?></div>
             <div class="kpi-label">Visitas este mes<br><small><?= $visitasHoy ?> hoy</small></div>
             <i class="bi bi-calendar-event kpi-icon"></i>
-        </div>
+        </a>
     </div>
 </div>
 

@@ -72,6 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'fecha_proximo_contacto' => post('fecha_proximo_contacto') ?: null,
         'estado' => post('estado', 'nuevo_lead'),
         'temperatura' => post('temperatura', 'frio'),
+        'prioridad' => post('prioridad', 'media'),
         'comision' => post('comision') ? floatval(str_replace(',', '.', post('comision'))) : null,
         'exclusividad' => isset($_POST['exclusividad']) ? 1 : 0,
         'notas' => $_POST['notas'] ?? null,
@@ -162,8 +163,8 @@ $energeticas = ['A'=>'A','B'=>'B','C'=>'C','D'=>'D','E'=>'E','F'=>'F','G'=>'G','
                     <input type="text" name="nombre" class="form-control" value="<?= sanitize($p['nombre'] ?? post('nombre')) ?>" required>
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label">Teléfono</label>
-                    <input type="tel" name="telefono" class="form-control" value="<?= sanitize($p['telefono'] ?? '') ?>">
+                    <label class="form-label">Teléfono *</label>
+                    <input type="tel" name="telefono" class="form-control" value="<?= sanitize($p['telefono'] ?? '') ?>" required>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Teléfono 2</label>
@@ -204,6 +205,18 @@ $energeticas = ['A'=>'A','B'=>'B','C'=>'C','D'=>'D','E'=>'E','F'=>'F','G'=>'G','
                         <option value="templado" <?= ($p['temperatura'] ?? '') === 'templado' ? 'selected' : '' ?>>🌡️ Templado</option>
                         <option value="caliente" <?= ($p['temperatura'] ?? '') === 'caliente' ? 'selected' : '' ?>>🔥 Caliente</option>
                     </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Prioridad</label>
+                    <select name="prioridad" class="form-select">
+                        <option value="alta" <?= ($p['prioridad'] ?? 'media') === 'alta' ? 'selected' : '' ?>>🔴 Alta</option>
+                        <option value="media" <?= ($p['prioridad'] ?? 'media') === 'media' ? 'selected' : '' ?>>🟡 Media</option>
+                        <option value="baja" <?= ($p['prioridad'] ?? 'media') === 'baja' ? 'selected' : '' ?>>🟢 Baja</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Enlace *</label>
+                    <input type="url" name="enlace" class="form-control" placeholder="https://..." value="<?= sanitize($p['enlace'] ?? '') ?>" required>
                 </div>
             </div>
         </div>
@@ -383,10 +396,7 @@ $energeticas = ['A'=>'A','B'=>'B','C'=>'C','D'=>'D','E'=>'E','F'=>'F','G'=>'G','
                     <label class="form-label">Calefacción</label>
                     <input type="text" name="calefaccion" class="form-control" placeholder="Gas, eléctrica..." value="<?= sanitize($p['calefaccion'] ?? '') ?>">
                 </div>
-                <div class="col-md-4">
-                    <label class="form-label">Enlace (Portal / Anuncio)</label>
-                    <input type="url" name="enlace" class="form-control" placeholder="https://..." value="<?= sanitize($p['enlace'] ?? '') ?>">
-                </div>
+
 
                 <!-- Checkboxes extras -->
                 <div class="col-12">
@@ -415,8 +425,8 @@ $energeticas = ['A'=>'A','B'=>'B','C'=>'C','D'=>'D','E'=>'E','F'=>'F','G'=>'G','
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-3">
-                    <label class="form-label">Fecha Publicación Propiedad</label>
-                    <input type="date" name="fecha_publicacion_propiedad" class="form-control" value="<?= sanitize($p['fecha_publicacion_propiedad'] ?? '') ?>">
+                    <label class="form-label">Fecha Publicación Propiedad *</label>
+                    <input type="date" name="fecha_publicacion_propiedad" class="form-control" value="<?= sanitize($p['fecha_publicacion_propiedad'] ?? '') ?>" required>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Fecha Primer Contacto</label>

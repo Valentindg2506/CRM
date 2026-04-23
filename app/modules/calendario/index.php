@@ -130,7 +130,7 @@ try {
     $whereAgente = $esAdmin ? '' : 'AND p.agente_id = ?';
     $params = $esAdmin
         ? [$fechaMesInicio, $fechaMesFin]
-        : [$uid, $fechaMesInicio, $fechaMesFin];
+        : [$fechaMesInicio, $fechaMesFin, $uid];
     $stmt = $db->prepare("
         SELECT p.id, p.nombre, p.fecha_proximo_contacto as fecha,
                u.nombre as agente_nombre
@@ -266,7 +266,7 @@ try {
 
 try {
     $whereAgenteHoy = $esAdmin ? '' : 'AND p.agente_id = ?';
-    $paramsHoy = $esAdmin ? [$hoy] : [$uid, $hoy];
+    $paramsHoy = $esAdmin ? [$hoy] : [$hoy, $uid];
     $stmt = $db->prepare("
         SELECT p.id, p.nombre FROM prospectos p
         WHERE p.activo = 1 AND p.etapa NOT IN ('captado','descartado')
@@ -361,7 +361,7 @@ try {
 
 try {
     $whereAgenteProx = $esAdmin ? '' : 'AND p.agente_id = ?';
-    $paramsProx = $esAdmin ? [$hoy] : [$uid, $hoy];
+    $paramsProx = $esAdmin ? [$hoy] : [$hoy, $uid];
     $stmt = $db->prepare("
         SELECT p.id, p.nombre, p.fecha_proximo_contacto
         FROM prospectos p

@@ -70,7 +70,7 @@ switch ($accion) {
 
         // Campos permitidos para edición inline
         $camposPermitidos = [
-            'nombre', 'email', 'telefono', 'telefono2', 'etapa', 'estado', 'temperatura',
+            'nombre', 'email', 'telefono', 'telefono2', 'etapa', 'estado', 'temperatura', 'prioridad',
             'tipo_propiedad', 'operacion', 'direccion', 'numero', 'piso_puerta', 'escalera', 'puerta', 'barrio',
             'localidad', 'provincia', 'comunidad_autonoma', 'codigo_postal',
             'precio_estimado', 'precio_propietario', 'precio_comunidad',
@@ -331,8 +331,8 @@ switch ($accion) {
         try {
             $esAdminApi = isAdmin();
             $whereAg = $esAdminApi ? '' : 'AND p.agente_id = ?';
-            $paramsAg = $esAdminApi ? [$fecha] : [$uid, $fecha];
-            $st = $db->prepare("SELECT p.nombre FROM prospectos p
+            $paramsAg = $esAdminApi ? [$fecha] : [$fecha, $uid];
+            $st = $db->prepare("SELECT p.nombre, DATE_FORMAT(p.hora_contacto,'%H:%i') as hora_c FROM prospectos p
                                 WHERE p.activo = 1
                                   AND p.etapa NOT IN ('captado','descartado')
                                   AND p.fecha_proximo_contacto = ?
@@ -340,7 +340,7 @@ switch ($accion) {
             $st->execute($paramsAg);
             foreach ($st->fetchAll() as $r) {
                 $eventos[] = ['tipo' => 'llamada', 'titulo' => 'Contactar: ' . $r['nombre'],
-                              'hora' => '09:00', 'color' => '#f59e0b', 'estado' => null];
+                              'hora' => $r['hora_c'] ?: '09:00', 'color' => '#f59e0b', 'estado' => null];
             }
         } catch (Exception $e) {}
 
@@ -354,6 +354,8 @@ switch ($accion) {
     case 'set_proximo_contacto':
         $prospectoId = intval($_POST['prospecto_id'] ?? 0);
         $fecha = $_POST['fecha'] ?? '';
+        $horaRaw = $_POST['hora'] ?? '';
+        $hora = preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $horaRaw) ? $horaRaw : null;
 
         if (!$prospectoId || !$fecha) {
             echo json_encode(['success' => false, 'error' => 'Parámetros inválidos']);
@@ -365,9 +367,10 @@ switch ($accion) {
         }
 
         try {
-            $db->prepare("UPDATE prospectos SET fecha_proximo_contacto = ? WHERE id = ?")
-               ->execute([$fecha, $prospectoId]);
-            registrarActividad('seguimiento', 'prospecto', $prospectoId, "Próximo contacto: $fecha");
+            $db->prepare("UPDATE prospectos SET fecha_proximo_contacto = ?, hora_contacto = ? WHERE id = ?")
+               ->execute([$fecha, $hora, $prospectoId]);
+            $horaLabel = $hora ? ' ' . substr($hora, 0, 5) : '';
+            registrarActividad('seguimiento', 'prospecto', $prospectoId, "Próximo contacto: $fecha$horaLabel");
             echo json_encode(['success' => true, 'fecha_formateada' => date('d/m/Y', strtotime($fecha))]);
         } catch (Exception $e) {
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);

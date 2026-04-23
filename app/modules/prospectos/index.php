@@ -20,9 +20,10 @@ $filtroProvincia = get('provincia');
 $filtroBusqueda = get('q');
 $filtroActivo = get('activo', '1');
 $filtroContacto = get('contacto');
+$filtroPrioridad = get('prioridad');
 $viewMode = get('view', 'tabla');
 $viewMode = in_array($viewMode, ['tabla', 'kanban'], true) ? $viewMode : 'tabla';
-$filtroPerPage = intval(get('per_page', 20));
+$filtroPerPage = intval(get('per_page', 50));
 $perPageOptions = [10, 20, 50, 100];
 if (!in_array($filtroPerPage, $perPageOptions, true)) {
     $filtroPerPage = 20;
@@ -50,6 +51,7 @@ if ($filtroEtapa) {
 }
 if ($filtroProvincia) { $where[] = 'p.provincia = ?'; $params[] = $filtroProvincia; }
 if ($filtroActivo !== '') { $where[] = 'p.activo = ?'; $params[] = $filtroActivo; }
+if ($filtroPrioridad) { $where[] = 'p.prioridad = ?'; $params[] = $filtroPrioridad; }
 if ($filtroBusqueda) {
     $where[] = '(p.nombre LIKE ? OR p.email LIKE ? OR p.telefono LIKE ? OR p.referencia LIKE ? OR p.direccion LIKE ?)';
     $busq = '%' . $filtroBusqueda . '%';
@@ -101,7 +103,7 @@ if ($viewMode === 'kanban') {
 }
 
 $provincias = getProvincias();
-$baseUrl = 'index.php?etapa=' . urlencode($filtroEtapa) . '&provincia=' . urlencode($filtroProvincia) . '&q=' . urlencode($filtroBusqueda) . '&activo=' . urlencode($filtroActivo) . '&contacto=' . urlencode($filtroContacto) . '&view=' . urlencode($viewMode) . '&per_page=' . urlencode((string)$filtroPerPage);
+$baseUrl = 'index.php?etapa=' . urlencode($filtroEtapa) . '&provincia=' . urlencode($filtroProvincia) . '&q=' . urlencode($filtroBusqueda) . '&activo=' . urlencode($filtroActivo) . '&contacto=' . urlencode($filtroContacto) . '&prioridad=' . urlencode($filtroPrioridad) . '&view=' . urlencode($viewMode) . '&per_page=' . urlencode((string)$filtroPerPage);
 
 $etapas = [
     'nuevo_lead' => ['label' => 'Nuevo Lead', 'color' => '#06b6d4'],
@@ -317,17 +319,18 @@ $etapas = [
 <div class="filter-bar">
     <form method="GET" class="row g-2 align-items-end">
         <input type="hidden" name="view" value="<?= sanitize($viewMode) ?>">
+        <input type="hidden" name="etapa" value="<?= sanitize($filtroEtapa) ?>">
         <div class="col-md-2">
             <label class="form-label">Buscar</label>
             <input type="text" name="q" class="form-control form-control-sm" placeholder="Nombre, email, telefono, ref..." value="<?= sanitize($filtroBusqueda) ?>">
         </div>
         <div class="col-md-2">
-            <label class="form-label">Etapa</label>
-            <select name="etapa" class="form-select form-select-sm">
+            <label class="form-label">Prioridad</label>
+            <select name="prioridad" class="form-select form-select-sm">
                 <option value="">Todas</option>
-                <?php foreach ($etapas as $k => $v): ?>
-                <option value="<?= $k ?>" <?= $filtroEtapa === $k ? 'selected' : '' ?>><?= $v['label'] ?></option>
-                <?php endforeach; ?>
+                <option value="alta" <?= $filtroPrioridad === 'alta' ? 'selected' : '' ?>>🔴 Alta</option>
+                <option value="media" <?= $filtroPrioridad === 'media' ? 'selected' : '' ?>>🟡 Media</option>
+                <option value="baja" <?= $filtroPrioridad === 'baja' ? 'selected' : '' ?>>🟢 Baja</option>
             </select>
         </div>
         <div class="col-md-2">
@@ -470,6 +473,7 @@ foreach ($prospectosKanban as $pr) {
                     <th>Nombre</th>
                     <th>Teléfono</th>
                     <th>Etapa</th>
+                    <th>Prioridad</th>
                     <th>Tipo</th>
                     <th>Enlace</th>
                     <th>Dirección</th>
@@ -510,6 +514,20 @@ foreach ($prospectosKanban as $pr) {
                         ?>
                         <span class="badge-estado" style="background: <?= $etapaInfo['color'] ?>20; color: <?= $etapaInfo['color'] ?>; white-space: nowrap;">
                             <?= $etapaLabelTabla ?>
+                        </span>
+                    </td>
+                    <td>
+                        <?php
+                        $prio = $pr['prioridad'] ?? 'media';
+                        $prioConfig = [
+                            'alta'  => ['label' => 'Alta',  'color' => '#ef4444', 'dot' => '🔴'],
+                            'media' => ['label' => 'Media', 'color' => '#f59e0b', 'dot' => '🟡'],
+                            'baja'  => ['label' => 'Baja',  'color' => '#10b981', 'dot' => '🟢'],
+                        ];
+                        $pc = $prioConfig[$prio] ?? $prioConfig['media'];
+                        ?>
+                        <span class="badge-estado" style="background: <?= $pc['color'] ?>20; color: <?= $pc['color'] ?>; white-space: nowrap;">
+                            <?= $pc['dot'] ?> <?= $pc['label'] ?>
                         </span>
                     </td>
                     <td><?= sanitize($pr['tipo_propiedad'] ?? '-') ?></td>
@@ -559,6 +577,15 @@ foreach ($prospectosKanban as $pr) {
                         <div class="btn-group btn-group-sm">
                             <a href="ver.php?id=<?= $pr['id'] ?>" class="btn btn-outline-primary" title="Ver"><i class="bi bi-eye"></i></a>
                             <a href="form.php?id=<?= $pr['id'] ?>" class="btn btn-outline-secondary" title="Editar"><i class="bi bi-pencil"></i></a>
+                            <?php if (!empty($pr['telefono'])): ?>
+                            <?php
+                            $waPhone = preg_replace('/\D/', '', $pr['telefono']);
+                            if (strlen($waPhone) === 9) $waPhone = '34' . $waPhone;
+                            ?>
+                            <a href="https://wa.me/<?= $waPhone ?>?text=<?= urlencode('Hola ' . ($pr['nombre'] ?? '')) ?>" target="_blank" rel="noopener" class="btn btn-outline-success" title="WhatsApp" style="color:#25D366; border-color:#25D366;">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16"><path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.9 7.9 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.9 7.9 0 0 0 13.6 2.326zM7.994 14.521a6.6 6.6 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.56 6.56 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592m3.615-4.934c-.197-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.007-.247-.007-.38-.007a.73.73 0 0 0-.529.247c-.182.198-.691.677-.691 1.654s.71 1.916.81 2.049c.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232"/></svg>
+                            </a>
+                            <?php endif; ?>
                             <form method="POST" action="delete.php" onsubmit="return confirm('Seguro que deseas eliminar este prospecto?')" class="d-inline">
                                 <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
                                 <input type="hidden" name="id" value="<?= intval($pr['id']) ?>">
@@ -569,7 +596,7 @@ foreach ($prospectosKanban as $pr) {
                 </tr>
                 <?php endforeach; ?>
                 <?php if (empty($prospectos)): ?>
-                <tr><td colspan="<?= $isAdm ? 14 : 13 ?>" class="text-center text-muted py-5">
+                <tr><td colspan="<?= $isAdm ? 15 : 14 ?>" class="text-center text-muted py-5">
                     <i class="bi bi-person-plus fs-1 d-block mb-2"></i>No se encontraron prospectos
                 </td></tr>
                 <?php endif; ?>

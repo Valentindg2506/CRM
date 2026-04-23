@@ -488,9 +488,12 @@ $tiposHistorialPropiedad = [
                     <div id="miniCalTasks" class="mt-2" style="display:none;">
                         <h6 class="small fw-bold mb-1" id="miniCalDate"></h6>
                         <div id="miniCalTaskList" class="task-list-day"></div>
-                        <button class="btn btn-sm btn-outline-primary w-100 mt-2" id="btnSetProxContacto" style="flex-shrink:0;">
-                            <i class="bi bi-calendar-plus"></i> Fijar como próximo contacto
-                        </button>
+                        <div class="d-flex align-items-center gap-2 mt-2">
+                            <input type="time" id="horaProxContacto" class="form-control form-control-sm" value="09:00" style="width:110px; flex-shrink:0;">
+                            <button class="btn btn-sm btn-outline-primary flex-grow-1" id="btnSetProxContacto">
+                                <i class="bi bi-calendar-plus"></i> Fijar como próximo contacto
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1024,11 +1027,14 @@ function loadTasksForDay(fecha) {
 const btnSetProxContacto = document.getElementById('btnSetProxContacto');
 if (btnSetProxContacto) btnSetProxContacto.addEventListener('click', function() {
     if (!selectedCalDate) return;
+    const horaInput = document.getElementById('horaProxContacto');
+    const hora = horaInput ? horaInput.value : '09:00';
     const body = new FormData();
     body.append('csrf_token', CSRF_TOKEN);
     body.append('accion', 'set_proximo_contacto');
     body.append('prospecto_id', PROSPECTO_ID);
     body.append('fecha', selectedCalDate);
+    body.append('hora', hora);
 
     fetch(API_URL, { method: 'POST', body })
     .then(r => r.json())
