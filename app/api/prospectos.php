@@ -109,6 +109,12 @@ switch ($accion) {
         try {
             $stmt = $db->prepare("UPDATE prospectos SET `$campo` = ? WHERE id = ?");
             $stmt->execute([$valor, $id]);
+
+            // Auto-desactivar cuando se marca como descartado
+            if ($campo === 'etapa' && $valor === 'descartado') {
+                $db->prepare("UPDATE prospectos SET activo = 0 WHERE id = ?")->execute([$id]);
+            }
+
             registrarActividad('editar_inline', 'prospecto', $id, "Campo: $campo");
 
             // Devolver valor formateado

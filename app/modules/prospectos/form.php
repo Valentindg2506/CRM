@@ -5,6 +5,13 @@ require_once __DIR__ . '/../../includes/validators.php';
 require_once __DIR__ . '/../../includes/custom_fields_helper.php';
 
 $db = getDB();
+
+// Asegurar columna propietarios_json (migración automática segura)
+try {
+    $db->exec("ALTER TABLE prospectos ADD COLUMN propietarios_json MEDIUMTEXT NULL DEFAULT NULL");
+} catch (PDOException $migrErr) {
+    // Columna ya existe — ignorar error 42S21 (duplicate column)
+}
 $id = intval(get('id'));
 $prospecto = null;
 
@@ -80,7 +87,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'historial_contactos' => $_POST['historial_contactos'] ?? null,
         'agente_id' => post('agente_id') ?: currentUserId(),
         'activo' => isset($_POST['activo']) ? 1 : 0,
+        'propietarios_json' => !empty($_POST['propietarios_json']) ? $_POST['propietarios_json'] : null,
     ];
+
+    // Auto-desactivar cuando se marca como descartado
+    if ($data['etapa'] === 'descartado') {
+        $data['activo'] = 0;
+    }
 
     $erroresValidacion = validarProspecto($data);
 
@@ -120,6 +133,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $agentes = $db->query("SELECT id, CONCAT(nombre, ' ', apellidos) as nombre_completo FROM usuarios WHERE activo = 1 ORDER BY nombre")->fetchAll();
 $provincias = getProvincias();
 $p = $prospecto ?? [];
+
+// Preservar datos del formulario cuando hay un error de validación
+if (!empty($error) && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $p = array_merge($p, $_POST);
+    // Re-evaluar checkboxes (no vienen en POST si están desmarcados)
+    foreach (['ascensor','garaje_incluido','trastero_incluido','terraza','balcon','jardin','piscina','aire_acondicionado','exclusividad','activo'] as $cb) {
+        $p[$cb] = isset($_POST[$cb]) ? 1 : 0;
+    }
+}
 
 $etapas = [
     'nuevo_lead' => 'Nuevo Lead',
@@ -164,11 +186,36 @@ $energeticas = ['A'=>'A','B'=>'B','C'=>'C','D'=>'D','E'=>'E','F'=>'F','G'=>'G','
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Teléfono *</label>
-                    <input type="tel" name="telefono" class="form-control" value="<?= sanitize($p['telefono'] ?? '') ?>" required>
+                    <div class="input-group">
+                        <select id="prefijo_tel1" class="form-select" style="max-width:120px; flex-shrink:0;">
+                            <?php
+                            $prefijos = [
+                                '+34'=>'🇪🇸 +34','+33'=>'🇫🇷 +33','+49'=>'🇩🇪 +49','+44'=>'🇬🇧 +44',
+                                '+39'=>'🇮🇹 +39','+351'=>'🇵🇹 +351','+212'=>'🇲🇦 +212','+1'=>'🇺🇸 +1',
+                                '+54'=>'🇦🇷 +54','+52'=>'🇲🇽 +52','+57'=>'🇨🇴 +57','+56'=>'🇨🇱 +56',
+                                '+51'=>'🇵🇪 +51','+58'=>'🇻🇪 +58','+593'=>'🇪🇨 +593','+53'=>'🇨🇺 +53',
+                                '+40'=>'🇷🇴 +40','+380'=>'🇺🇦 +380','+7'=>'🇷🇺 +7','+86'=>'🇨🇳 +86',
+                                '+32'=>'🇧🇪 +32','+31'=>'🇳🇱 +31','+41'=>'🇨🇭 +41','+43'=>'🇦🇹 +43',
+                            ];
+                            foreach ($prefijos as $k => $v): ?>
+                            <option value="<?= $k ?>"><?= $v ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <input type="tel" id="tel1_numero" class="form-control" placeholder="612345678" required>
+                        <input type="hidden" name="telefono" id="telefono_combined" value="<?= sanitize($p['telefono'] ?? '') ?>">
+                    </div>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Teléfono 2</label>
-                    <input type="tel" name="telefono2" class="form-control" value="<?= sanitize($p['telefono2'] ?? '') ?>">
+                    <div class="input-group">
+                        <select id="prefijo_tel2" class="form-select" style="max-width:120px; flex-shrink:0;">
+                            <?php foreach ($prefijos as $k => $v): ?>
+                            <option value="<?= $k ?>"><?= $v ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <input type="tel" id="tel2_numero" class="form-control" placeholder="612345678">
+                        <input type="hidden" name="telefono2" id="telefono2_combined" value="<?= sanitize($p['telefono2'] ?? '') ?>">
+                    </div>
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">Referencia</label>
@@ -219,6 +266,21 @@ $energeticas = ['A'=>'A','B'=>'B','C'=>'C','D'=>'D','E'=>'E','F'=>'F','G'=>'G','
                     <input type="url" name="enlace" class="form-control" placeholder="https://..." value="<?= sanitize($p['enlace'] ?? '') ?>" required>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Propietarios adicionales -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-people"></i> Copropietarios <small class="text-muted fw-normal">(si la propiedad tiene más de un propietario)</small></span>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddOwner">
+                <i class="bi bi-person-plus"></i> Añadir copropietario
+            </button>
+        </div>
+        <div class="card-body">
+            <div id="ownersContainer"></div>
+            <p id="ownersEmpty" class="text-muted small mb-0">Sin copropietarios. Pulsa «Añadir copropietario» si la propiedad tiene más de un titular.</p>
+            <input type="hidden" name="propietarios_json" id="propietarios_json_field" value="<?= sanitize($p['propietarios_json'] ?? '') ?>">
         </div>
     </div>
 
@@ -513,6 +575,181 @@ $energeticas = ['A'=>'A','B'=>'B','C'=>'C','D'=>'D','E'=>'E','F'=>'F','G'=>'G','
 </form>
 
 <script>
+// ── Selector de prefijo telefónico ──────────────────────────────
+(function() {
+    const prefijos = ['+34','+33','+49','+44','+39','+351','+212','+1','+54','+52','+57','+56','+51','+58','+593','+53','+40','+380','+7','+86','+32','+31','+41','+43'];
+
+    function parsePhone(stored, prefixSel, numInput) {
+        if (!stored) { prefixSel.value = '+34'; return; }
+        const clean = stored.replace(/[\s\-\(\)]/g, '');
+        if (clean.startsWith('+')) {
+            // Buscar el prefijo más largo que coincida
+            const match = prefijos.filter(p => clean.startsWith(p)).sort((a,b) => b.length - a.length)[0];
+            if (match) {
+                prefixSel.value = match;
+                numInput.value = clean.slice(match.length);
+                return;
+            }
+        }
+        prefixSel.value = '+34';
+        numInput.value = clean.startsWith('0') ? clean.slice(1) : clean;
+    }
+
+    function combinePhone(prefixSel, numInput, hiddenInput) {
+        const num = numInput.value.trim();
+        if (!num) { hiddenInput.value = ''; return; }
+        const prefix = prefixSel.value;
+        // Si el número ya tiene prefijo, no duplicar
+        if (num.startsWith('+')) { hiddenInput.value = num; return; }
+        hiddenInput.value = prefix + num;
+    }
+
+    const pref1 = document.getElementById('prefijo_tel1');
+    const num1  = document.getElementById('tel1_numero');
+    const hid1  = document.getElementById('telefono_combined');
+    if (pref1 && num1 && hid1) {
+        parsePhone(hid1.value, pref1, num1);
+        [pref1, num1].forEach(el => el.addEventListener('input', () => combinePhone(pref1, num1, hid1)));
+        [pref1, num1].forEach(el => el.addEventListener('change', () => combinePhone(pref1, num1, hid1)));
+    }
+
+    const pref2 = document.getElementById('prefijo_tel2');
+    const num2  = document.getElementById('tel2_numero');
+    const hid2  = document.getElementById('telefono2_combined');
+    if (pref2 && num2 && hid2) {
+        parsePhone(hid2.value, pref2, num2);
+        [pref2, num2].forEach(el => el.addEventListener('input', () => combinePhone(pref2, num2, hid2)));
+        [pref2, num2].forEach(el => el.addEventListener('change', () => combinePhone(pref2, num2, hid2)));
+    }
+
+    // Asegurar que los campos hidden están actualizados antes de enviar
+    const form = document.querySelector('form[method="POST"]');
+    if (form) {
+        form.addEventListener('submit', () => {
+            if (pref1 && num1 && hid1) combinePhone(pref1, num1, hid1);
+            if (pref2 && num2 && hid2) combinePhone(pref2, num2, hid2);
+        });
+    }
+})();
+
+// ── Copropietarios ───────────────────────────────────────────────
+(function() {
+    const container = document.getElementById('ownersContainer');
+    const emptyMsg  = document.getElementById('ownersEmpty');
+    const jsonField = document.getElementById('propietarios_json_field');
+    const btnAdd    = document.getElementById('btnAddOwner');
+    let owners = [];
+
+    // Cargar propietarios existentes
+    try {
+        const raw = jsonField ? jsonField.value : '';
+        if (raw) owners = JSON.parse(raw) || [];
+    } catch(e) { owners = []; }
+
+    function prefixOptions(selected) {
+        const prefijos = {'+34':'🇪🇸','+33':'🇫🇷','+49':'🇩🇪','+44':'🇬🇧','+39':'🇮🇹','+351':'🇵🇹','+212':'🇲🇦','+1':'🇺🇸','+54':'🇦🇷','+52':'🇲🇽','+57':'🇨🇴','+56':'🇨🇱','+51':'🇵🇪','+58':'🇻🇪','+40':'🇷🇴','+380':'🇺🇦','+7':'🇷🇺'};
+        return Object.entries(prefijos).map(([k,f]) =>
+            `<option value="${k}" ${k===selected?'selected':''}>${f} ${k}</option>`
+        ).join('');
+    }
+
+    function parseStored(tel) {
+        if (!tel) return {prefix:'+34', num:''};
+        const c = tel.replace(/[\s\-\(\)]/g,'');
+        if (c.startsWith('+')) {
+            const pList = ['+351','+380','+593','+212','+34','+33','+49','+44','+39','+1','+54','+52','+57','+56','+51','+58','+40','+7'];
+            const m = pList.find(p => c.startsWith(p));
+            if (m) return {prefix:m, num:c.slice(m.length)};
+        }
+        return {prefix:'+34', num:c};
+    }
+
+    function render() {
+        if (!container) return;
+        if (owners.length === 0) {
+            container.innerHTML = '';
+            if (emptyMsg) emptyMsg.style.display = '';
+            return;
+        }
+        if (emptyMsg) emptyMsg.style.display = 'none';
+        container.innerHTML = owners.map((o, i) => {
+            const tp = parseStored(o.telefono);
+            return `<div class="border rounded p-3 mb-2 owner-row" data-idx="${i}">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <strong class="small text-muted">Propietario ${i+2}</strong>
+                    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 btn-remove-owner" data-idx="${i}"><i class="bi bi-x-lg"></i></button>
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <input type="text" class="form-control form-control-sm owner-nombre" data-idx="${i}" placeholder="Nombre" value="${o.nombre||''}">
+                    </div>
+                    <div class="col-md-4">
+                        <div class="input-group input-group-sm">
+                            <select class="form-select form-select-sm owner-prefix" data-idx="${i}" style="max-width:100px;">${prefixOptions(tp.prefix)}</select>
+                            <input type="tel" class="form-control owner-tel" data-idx="${i}" placeholder="612345678" value="${tp.num}">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <input type="email" class="form-control form-control-sm owner-email" data-idx="${i}" placeholder="Email" value="${o.email||''}">
+                    </div>
+                    <div class="col-md-4">
+                        <input type="text" class="form-control form-control-sm owner-dni" data-idx="${i}" placeholder="DNI/NIE/CIF" value="${o.dni||''}">
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+
+        // Eventos
+        container.querySelectorAll('.btn-remove-owner').forEach(btn => {
+            btn.addEventListener('click', () => { owners.splice(parseInt(btn.dataset.idx), 1); serializeAndRender(); });
+        });
+        ['owner-nombre','owner-email','owner-dni'].forEach(cls => {
+            container.querySelectorAll('.'+cls).forEach(inp => {
+                inp.addEventListener('input', serializeOwners);
+            });
+        });
+        container.querySelectorAll('.owner-prefix,.owner-tel').forEach(inp => {
+            inp.addEventListener('change', serializeOwners);
+            inp.addEventListener('input', serializeOwners);
+        });
+    }
+
+    function serializeOwners() {
+        container.querySelectorAll('.owner-row').forEach(row => {
+            const i = parseInt(row.dataset.idx);
+            const prefix = (row.querySelector('.owner-prefix')||{}).value || '+34';
+            const num    = (row.querySelector('.owner-tel')||{}).value.trim() || '';
+            owners[i] = {
+                nombre:   (row.querySelector('.owner-nombre')||{}).value || '',
+                telefono: num ? prefix + num : '',
+                email:    (row.querySelector('.owner-email')||{}).value || '',
+                dni:      (row.querySelector('.owner-dni')||{}).value || '',
+            };
+        });
+        if (jsonField) jsonField.value = JSON.stringify(owners);
+    }
+
+    function serializeAndRender() {
+        serializeOwners();
+        render();
+        if (jsonField) jsonField.value = JSON.stringify(owners);
+    }
+
+    if (btnAdd) {
+        btnAdd.addEventListener('click', () => {
+            owners.push({nombre:'',telefono:'',email:'',dni:''});
+            serializeAndRender();
+        });
+    }
+
+    render();
+
+    // Serializar antes de enviar
+    const form = document.querySelector('form[method="POST"]');
+    if (form) form.addEventListener('submit', serializeOwners);
+})();
+
+// ── Detección de duplicados ──────────────────────────────────────
 (function() {
     const excludeId = <?= $id ?: 0 ?>;
     const excludeTipo = 'prospecto';

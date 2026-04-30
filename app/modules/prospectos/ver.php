@@ -377,22 +377,48 @@ $tiposHistorialPropiedad = [
 
                 <div class="mb-2">
                     <small class="text-muted d-block">Teléfono</small>
-                    <span class="editable-field" data-field="telefono" data-type="tel" data-value="<?= sanitize($p['telefono'] ?? '') ?>">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="editable-field" data-field="telefono" data-type="tel" data-value="<?= sanitize($p['telefono'] ?? '') ?>">
+                            <?php if ($p['telefono']): ?>
+                                <a href="tel:<?= sanitize($p['telefono']) ?>"><?= sanitize($p['telefono']) ?></a>
+                            <?php else: ?>
+                                <span class="text-muted">-</span>
+                            <?php endif; ?>
+                            <i class="bi bi-pencil edit-icon"></i>
+                        </span>
                         <?php if ($p['telefono']): ?>
-                            <a href="tel:<?= sanitize($p['telefono']) ?>"><?= sanitize($p['telefono']) ?></a>
-                        <?php else: ?>
-                            <span class="text-muted">-</span>
+                            <?php
+                            $telWa = preg_replace('/[^0-9]/', '', $p['telefono']);
+                            if (strlen($telWa) === 9) $telWa = '34' . $telWa;
+                            ?>
+                            <a href="https://wa.me/<?= $telWa ?>" target="_blank" rel="noopener" class="btn btn-sm btn-success py-0 px-2" style="font-size:0.75rem;" title="Enviar WhatsApp">
+                                <i class="bi bi-whatsapp"></i> WhatsApp
+                            </a>
                         <?php endif; ?>
-                        <i class="bi bi-pencil edit-icon"></i>
-                    </span>
+                    </div>
                 </div>
 
                 <div class="mb-2">
                     <small class="text-muted d-block">Teléfono 2</small>
-                    <span class="editable-field" data-field="telefono2" data-type="tel" data-value="<?= sanitize($p['telefono2'] ?? '') ?>">
-                        <?= $p['telefono2'] ? sanitize($p['telefono2']) : '<span class="text-muted">-</span>' ?>
-                        <i class="bi bi-pencil edit-icon"></i>
-                    </span>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="editable-field" data-field="telefono2" data-type="tel" data-value="<?= sanitize($p['telefono2'] ?? '') ?>">
+                            <?php if ($p['telefono2']): ?>
+                                <a href="tel:<?= sanitize($p['telefono2']) ?>"><?= sanitize($p['telefono2']) ?></a>
+                            <?php else: ?>
+                                <span class="text-muted">-</span>
+                            <?php endif; ?>
+                            <i class="bi bi-pencil edit-icon"></i>
+                        </span>
+                        <?php if ($p['telefono2']): ?>
+                            <?php
+                            $tel2Wa = preg_replace('/[^0-9]/', '', $p['telefono2']);
+                            if (strlen($tel2Wa) === 9) $tel2Wa = '34' . $tel2Wa;
+                            ?>
+                            <a href="https://wa.me/<?= $tel2Wa ?>" target="_blank" rel="noopener" class="btn btn-sm btn-success py-0 px-2" style="font-size:0.75rem;" title="Enviar WhatsApp">
+                                <i class="bi bi-whatsapp"></i> WA
+                            </a>
+                        <?php endif; ?>
+                    </div>
                 </div>
 
                 <div class="mb-2">
@@ -410,6 +436,40 @@ $tiposHistorialPropiedad = [
                         <i class="bi bi-pencil edit-icon"></i>
                     </span>
                 </div>
+
+                <?php
+                // Mostrar copropietarios si existen
+                $copropietarios = [];
+                if (!empty($p['propietarios_json'])) {
+                    $copropietarios = json_decode($p['propietarios_json'], true) ?? [];
+                }
+                if (!empty($copropietarios)):
+                ?>
+                <hr>
+                <div class="mb-2">
+                    <small class="text-muted d-block fw-semibold"><i class="bi bi-people"></i> Copropietarios</small>
+                    <?php foreach ($copropietarios as $idx => $co): ?>
+                    <div class="border rounded p-2 mt-1" style="font-size:0.85rem;">
+                        <div class="fw-semibold"><?= sanitize($co['nombre'] ?? 'Propietario ' . ($idx+2)) ?></div>
+                        <?php if (!empty($co['telefono'])): ?>
+                        <?php
+                        $coTelWa = preg_replace('/[^0-9]/', '', $co['telefono']);
+                        if (strlen($coTelWa) === 9) $coTelWa = '34' . $coTelWa;
+                        ?>
+                        <div><a href="tel:<?= sanitize($co['telefono']) ?>"><?= sanitize($co['telefono']) ?></a>
+                            <a href="https://wa.me/<?= $coTelWa ?>" target="_blank" rel="noopener" class="btn btn-success btn-sm py-0 px-1 ms-1" style="font-size:0.7rem;"><i class="bi bi-whatsapp"></i></a>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (!empty($co['email'])): ?>
+                        <div><a href="mailto:<?= sanitize($co['email']) ?>"><?= sanitize($co['email']) ?></a></div>
+                        <?php endif; ?>
+                        <?php if (!empty($co['dni'])): ?>
+                        <div class="text-muted"><?= sanitize($co['dni']) ?></div>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
 
                 <p class="mb-0 text-muted mt-3"><small>Alta: <?= formatFecha($p['created_at']) ?></small></p>
             </div>
@@ -486,7 +546,10 @@ $tiposHistorialPropiedad = [
                 <div class="mini-cal-wrapper">
                     <div id="miniCalendar"></div>
                     <div id="miniCalTasks" class="mt-2" style="display:none;">
-                        <h6 class="small fw-bold mb-1" id="miniCalDate"></h6>
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <h6 class="small fw-bold mb-0" id="miniCalDate"></h6>
+                            <span id="miniCalCount" class="badge bg-primary rounded-pill" style="font-size:0.65rem; display:none;"></span>
+                        </div>
                         <div id="miniCalTaskList" class="task-list-day"></div>
                         <div class="d-flex align-items-center gap-2 mt-2">
                             <input type="time" id="horaProxContacto" class="form-control form-control-sm" value="09:00" style="width:110px; flex-shrink:0;">
@@ -999,8 +1062,17 @@ function loadTasksForDay(fecha) {
     .then(r => r.json())
     .then(data => {
         const list = document.getElementById('miniCalTaskList');
+        const countBadge = document.getElementById('miniCalCount');
         if (!list) return;
         const eventos = (data && (data.eventos || data.tareas)) || [];
+        if (countBadge) {
+            if (eventos.length > 0) {
+                countBadge.textContent = eventos.length + ' actividad' + (eventos.length !== 1 ? 'es' : '');
+                countBadge.style.display = '';
+            } else {
+                countBadge.style.display = 'none';
+            }
+        }
         if (eventos.length > 0) {
             list.innerHTML = eventos.map(ev => {
                 const color = ev.color || '#6b7280';

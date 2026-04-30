@@ -109,9 +109,11 @@ function validarDocumentoIdentidad($documento) {
 function validarTelefono($telefono) {
     if (empty($telefono)) return true; // Opcional
     $limpio = preg_replace('/[\s\-\.\(\)]/', '', $telefono);
-    // Con o sin prefijo +34
-    if (preg_match('/^\+?34?[6789][0-9]{8}$/', $limpio)) return true;
-    // Solo 9 digitos empezando por 6, 7, 8 o 9
+    // Formato internacional: +[código país][número] — entre 7 y 15 dígitos
+    if (preg_match('/^\+[1-9][0-9]{6,14}$/', $limpio)) return true;
+    // Español con o sin +34
+    if (preg_match('/^\+?34[6789][0-9]{8}$/', $limpio)) return true;
+    // 9 dígitos empezando por 6, 7, 8 o 9 (España sin prefijo)
     if (preg_match('/^[6789][0-9]{8}$/', $limpio)) return true;
     return false;
 }

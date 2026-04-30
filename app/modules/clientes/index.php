@@ -170,8 +170,14 @@ $baseUrl = 'index.php?tipo=' . urlencode($filtroTipo) . '&origen=' . urlencode($
                         <?php if (!$c['activo']): ?><span class="badge bg-secondary">Inactivo</span><?php endif; ?>
                     </td>
                     <td>
-                        <?php foreach (explode(',', $c['tipo']) as $t): ?>
-                        <span class="badge bg-outline-primary border"><?= ucfirst(trim($t)) ?></span>
+                        <?php
+                        $tipoBadge = ['comprador'=>'bg-info','vendedor'=>'bg-success','inquilino'=>'bg-warning text-dark','propietario'=>'bg-primary','inversor'=>'bg-danger'];
+                        foreach (explode(',', $c['tipo']) as $t):
+                            $t = trim($t);
+                            if (!$t) continue;
+                            $bc = $tipoBadge[$t] ?? 'bg-secondary';
+                        ?>
+                        <span class="badge <?= $bc ?> me-1"><?= ucfirst($t) ?></span>
                         <?php endforeach; ?>
                     </td>
                     <td><?= sanitize($c['email'] ?? '-') ?></td>

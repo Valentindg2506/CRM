@@ -82,8 +82,11 @@ $widgetOptions = [
 ];
 ?>
 
-<div class="d-flex align-items-center gap-2 mb-4">
+<div class="d-flex align-items-center justify-content-between gap-2 mb-4">
     <h5 class="mb-0"><i class="bi bi-sliders"></i> Preferencias</h5>
+    <a href="mcp_connector.php" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-robot"></i> Conector Claude (MCP)
+    </a>
 </div>
 
 <form method="POST" enctype="multipart/form-data">
