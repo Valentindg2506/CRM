@@ -165,7 +165,7 @@ try {
             $stmt->execute([$like, $like, $like, $like]);
             $clientes = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-            $stmt = $db->prepare("SELECT id, referencia, titulo, tipo, estado, precio FROM propiedades WHERE activo = 1 AND (titulo LIKE ? OR referencia LIKE ? OR localidad LIKE ?) $af LIMIT 10");
+            $stmt = $db->prepare("SELECT id, referencia, titulo, tipo, estado, precio FROM propiedades WHERE (titulo LIKE ? OR referencia LIKE ? OR localidad LIKE ?) $af LIMIT 10");
             $stmt->execute([$like, $like, $like]);
             $propiedades = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -521,7 +521,7 @@ try {
 
             $sql  = "SELECT p.id, p.referencia, p.titulo, p.tipo, p.estado,
                             p.precio, p.localidad, p.provincia,
-                            p.habitaciones, p.banos, p.metros_construidos
+                            p.habitaciones, p.banos, p.superficie_construida, p.superficie_util
                      FROM propiedades p
                      WHERE " . implode(' AND ', $where) .
                     " ORDER BY p.created_at DESC LIMIT $limit";
@@ -563,20 +563,20 @@ try {
             $ref  = 'IM' . str_pad((int)$stmt->fetchColumn() + 1, 4, '0', STR_PAD_LEFT);
 
             $ins = $db->prepare(
-                "INSERT INTO propiedades (referencia, titulo, tipo, estado, precio, localidad, provincia, descripcion, habitaciones, banos, metros_construidos, agente_id, activo)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)"
+                "INSERT INTO propiedades (referencia, titulo, tipo, estado, precio, localidad, provincia, descripcion, habitaciones, banos, superficie_construida, agente_id)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
             );
             $ins->execute([
                 $ref, $titulo,
-                $body['tipo']         ?? 'Piso',
+                $body['tipo']         ?? 'piso',
                 $body['estado']       ?? 'disponible',
-                isset($body['precio'])      ? (float)$body['precio']   : null,
+                isset($body['precio'])       ? (float)$body['precio']       : null,
                 $body['localidad']    ?? null,
                 $body['provincia']    ?? null,
                 $body['descripcion']  ?? null,
-                isset($body['habitaciones']) ? (int)$body['habitaciones'] : null,
-                isset($body['banos'])        ? (int)$body['banos']        : null,
-                isset($body['metros'])       ? (float)$body['metros']     : null,
+                isset($body['habitaciones']) ? (int)$body['habitaciones']   : null,
+                isset($body['banos'])        ? (int)$body['banos']          : null,
+                isset($body['metros'])       ? (float)$body['metros']       : null,
                 $userId,
             ]);
             $newId = (int)$db->lastInsertId();
@@ -595,7 +595,7 @@ try {
             if (!$chk->fetch()) { err('Propiedad no encontrada o sin acceso', 403); break; }
 
             $campos = []; $params = [];
-            $estadosOk = ['disponible','reservada','vendida','alquilada'];
+            $estadosOk = ['disponible','reservado','vendido','alquilado','retirado'];
             if (!empty($body['estado']) && in_array($body['estado'], $estadosOk)) {
                 $campos[] = 'estado = ?'; $params[] = $body['estado'];
             }
@@ -801,20 +801,19 @@ try {
 
             $where  = ['1=1'];
             $params = [];
-            if ($estado)  { $where[] = 'v.estado = ?';                         $params[] = $estado; }
-            if ($soloHoy) { $where[] = 'DATE(v.fecha_visita) = CURDATE()'; }
+            if ($estado)  { $where[] = 'v.estado = ?';                 $params[] = $estado; }
+            if ($soloHoy) { $where[] = 'v.fecha = CURDATE()'; }
 
             $sql = "SELECT v.id, v.estado,
-                           DATE_FORMAT(v.fecha_visita,'%d/%m/%Y %H:%i') as fecha,
-                           v.duracion_minutos,
+                           CONCAT(DATE_FORMAT(v.fecha,'%d/%m/%Y'),' ',COALESCE(TIME_FORMAT(v.hora,'%H:%i'),'')) as fecha,
+                           v.duracion_minutos, v.comentarios,
                            p.titulo as propiedad, p.localidad,
-                           COALESCE(pr.nombre, c.nombre) as contacto
+                           c.nombre as contacto
                     FROM visitas v
-                    LEFT JOIN propiedades p  ON v.propiedad_id = p.id
-                    LEFT JOIN prospectos pr  ON v.prospecto_id = pr.id
-                    LEFT JOIN clientes c     ON v.cliente_id   = c.id
+                    LEFT JOIN propiedades p ON v.propiedad_id = p.id
+                    LEFT JOIN clientes c    ON v.cliente_id   = c.id
                     WHERE " . implode(' AND ', $where) . " $af
-                    ORDER BY v.fecha_visita ASC LIMIT $limit";
+                    ORDER BY v.fecha ASC, v.hora ASC LIMIT $limit";
             $stmt = $db->prepare($sql);
             $stmt->execute($params);
             ok(['visitas' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
@@ -826,19 +825,21 @@ try {
             $fecha  = trim($body['fecha'] ?? '');
             if (!$propId || !$fecha) { err('propiedad_id y fecha son obligatorios'); break; }
 
-            // Normalizar fecha (acepta YYYY-MM-DD HH:MM o YYYY-MM-DD HH:MM:SS)
-            $fechaDt = date('Y-m-d H:i:s', strtotime($fecha));
-            if ($fechaDt === '1970-01-01 00:00:00') { err('Formato de fecha inválido. Usa YYYY-MM-DD HH:MM'); break; }
+            // Separar fecha y hora (acepta "YYYY-MM-DD HH:MM" o "YYYY-MM-DD")
+            $ts    = strtotime($fecha);
+            if (!$ts) { err('Formato de fecha inválido. Usa YYYY-MM-DD HH:MM'); break; }
+            $fechaDate = date('Y-m-d', $ts);
+            $fechaHora = date('H:i:s', $ts);
 
             $ins = $db->prepare(
-                "INSERT INTO visitas (propiedad_id, prospecto_id, cliente_id, fecha_visita, duracion_minutos, notas, estado, agente_id)
+                "INSERT INTO visitas (propiedad_id, cliente_id, fecha, hora, duracion_minutos, comentarios, estado, agente_id)
                  VALUES (?,?,?,?,?,?,'programada',?)"
             );
             $ins->execute([
                 $propId,
-                isset($body['prospecto_id']) ? (int)$body['prospecto_id'] : null,
-                isset($body['cliente_id'])   ? (int)$body['cliente_id']   : null,
-                $fechaDt,
+                isset($body['cliente_id']) ? (int)$body['cliente_id'] : null,
+                $fechaDate,
+                $fechaHora,
                 (int)($body['duracion_min'] ?? 60),
                 $body['notas'] ?? null,
                 $userId,
@@ -846,7 +847,7 @@ try {
             $newId = (int)$db->lastInsertId();
 
             // Crear tarea recordatorio automática
-            $tituloTarea = 'Visita programada - ' . date('d/m/Y H:i', strtotime($fechaDt));
+            $tituloTarea = 'Visita programada - ' . date('d/m/Y H:i', $ts);
             $db->prepare("INSERT INTO tareas (titulo, tipo, estado, fecha_vencimiento, asignado_a, creado_por, propiedad_id) VALUES (?,?,?,?,?,?,?)")
                ->execute([$tituloTarea, 'visita', 'pendiente', $fechaDt, $userId, $userId, $propId]);
 
@@ -986,16 +987,15 @@ try {
         case 'campanas': {
             $estado = $_GET['estado'] ?? '';
             $limit  = min(50, max(1, (int)($_GET['limit'] ?? 20)));
-            $af     = $isAdmin ? '' : " AND ca.created_by = $userId";
+            $af     = $isAdmin ? '' : " AND ca.usuario_id = $userId";
 
             $where  = ['1=1'];
             $params = [];
             if ($estado) { $where[] = 'ca.estado = ?'; $params[] = $estado; }
 
             $sql = "SELECT ca.id, ca.nombre, ca.tipo, ca.estado,
-                           DATE_FORMAT(ca.fecha_inicio,'%d/%m/%Y') as inicio,
-                           DATE_FORMAT(ca.fecha_fin,'%d/%m/%Y') as fin,
-                           (SELECT COUNT(*) FROM campana_contactos WHERE campana_id = ca.id) as contactos
+                           ca.total_contactos, ca.enviados, ca.abiertos, ca.clicks,
+                           DATE_FORMAT(ca.created_at,'%d/%m/%Y') as creada
                     FROM campanas ca
                     WHERE " . implode(' AND ', $where) . " $af
                     ORDER BY ca.created_at DESC LIMIT $limit";
