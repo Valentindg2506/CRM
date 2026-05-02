@@ -10,6 +10,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { config as loadEnv } from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { randomBytes } from "crypto";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: join(__dirname, ".env") });
@@ -245,7 +246,6 @@ if (MODE === "sse") {
 
   // 2. Dynamic Client Registration (DCR)
   app.post("/register", express.json(), (req, res) => {
-    const { randomBytes } = require("crypto");
     const clientId = randomBytes(16).toString("hex");
     const clientSecret = randomBytes(32).toString("hex");
     oauthClients[clientId] = clientSecret;
@@ -303,7 +303,6 @@ if (MODE === "sse") {
     if (!redirect_uri) return res.status(400).send("Falta redirect_uri");
     
     // Generamos un código temporal
-    const { randomBytes } = require("crypto");
     const code = randomBytes(16).toString("hex");
     authCodes[code] = crm_token;
 
