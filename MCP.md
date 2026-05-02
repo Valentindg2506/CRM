@@ -1,38 +1,142 @@
-## MCP Connector en este portátil
+## MCP Connector — Guía de conexión
 
-Estado actual:
+El CRM expone un servidor MCP que permite a las IAs consultar y gestionar prospectos, clientes, tareas, propiedades y más.
 
-- El CRM corre localmente en `http://localhost:3000`.
-- El túnel público está activo en este portátil mientras siga abierto el proceso de `cloudflared`.
-- URL pública actual: `https://humanities-stream-reynolds-practitioner.trycloudflare.com`
+---
 
-### URL que debes poner en la IA
+## Claude Desktop (app de escritorio)
 
-La URL del conector MCP es siempre la ruta base:
+**No necesita Cloudflare ni ningún servidor externo.** Desktop lanza el conector directamente como proceso local.
 
-`https://interact-prot-morgan-claimed.trycloudflare.com`
-
-- Para Perplexity u otros que pidan la URL del servidor MCP en vez de la de SSE, pon: `https://interact-prot-morgan-claimed.trycloudflare.com` y ellos usarán el registro automático. Cuando lo hagan, se abrirá una ventana tipo "Autorizar IA" donde deberás pegar tu token del CRM de 64 caracteres.
-- Por el contrario, si tu IA solicita un endpoint SSE directo, ingresa `https://interact-prot-morgan-claimed.trycloudflare.com/sse?token=TU_TOKEN`
-
-### Pruebas rápidas
-
-Health check:
-
-```bash
-curl https://humanities-stream-reynolds-practitioner.trycloudflare.com/health
+Edita el archivo:
+```
+~/Library/Application Support/Claude/claude_desktop_config.json
 ```
 
-Prueba de SSE con token inválido:
+Y añade dentro del JSON (ya configurado en tu equipo):
 
-```bash
-curl -i 'https://humanities-stream-reynolds-practitioner.trycloudflare.com/sse?token=abc'
+```json
+{
+  "mcpServers": {
+    "crm": {
+      "command": "/usr/local/bin/node",
+      "args": ["/Users/Valentin/Documents/GitHub/CRM/mcp-connector/index.js"],
+      "env": {
+        "MODE": "stdio",
+        "CRM_URL": "https://tinoprop.es",
+        "CRM_TOKEN": "TU_TOKEN_64_CHARS"
+      }
+    }
+  }
+}
 ```
 
-### Importante
+Luego **reinicia Claude Desktop** (Cmd+Q y vuelve a abrir). Verás el icono de herramientas (🔧) en el chat cuando esté conectado.
 
-- Esta URL es temporal y depende de que el proceso de `cloudflared` siga corriendo en este portátil.
-- Si reinicias el portátil o cierras `cloudflared`, la URL puede cambiar.
-- Si quieres una URL fija tipo `mcp.tinoprop.es`, hay que mover el DNS de `tinoprop.es` a Cloudflare. Ahora mismo ese dominio sigue en Hostinger, por eso no pude publicar un subdominio estable ahí.
+> **¿Dónde consigo el token?** → CRM → Ajustes → Conector Claude (MCP)
 
-Si quieres, el siguiente paso es dejar este túnel arrancando solo al iniciar sesión en macOS para que no tengas que tocar nada.
+---
+
+## Claude Code CLI / VS Code Extension
+
+Usa el protocolo Streamable HTTP a través del túnel Cloudflare.
+
+**1. Arranca el servidor MCP:**
+```bash
+cd /Users/Valentin/Documents/GitHub/CRM/mcp-connector
+npm run start:sse
+```
+
+**2. Abre el túnel Cloudflare:**
+```bash
+cloudflared tunnel --url http://localhost:3001
+```
+Anota la URL que aparece, p.ej. `https://abc-def.trycloudflare.com`
+
+**3. Edita `~/.claude/settings.json`** (ya configurado en tu equipo):
+```json
+{
+  "mcpServers": {
+    "crm": {
+      "type": "http",
+      "url": "https://TU_URL.trycloudflare.com/mcp",
+      "headers": {
+        "Authorization": "Bearer TU_TOKEN_64_CHARS"
+      }
+    }
+  }
+}
+```
+
+No hace falta reiniciar Claude Code — detecta el cambio automáticamente.
+
+**Prueba de conectividad:**
+```bash
+curl https://TU_URL.trycloudflare.com/health
+```
+
+---
+
+## Claude.ai web / Perplexity (SSE + OAuth)
+
+Necesitas el servidor MCP corriendo con Cloudflare (pasos 1 y 2 de la sección anterior).
+
+**Si la IA pide la URL del servidor MCP** (registro automático):
+```
+https://TU_URL.trycloudflare.com
+```
+Se abrirá una ventana "Autorizar IA" donde pegas tu token de 64 caracteres.
+
+**Si la IA pide endpoint SSE directo:**
+```
+https://TU_URL.trycloudflare.com/sse?token=TU_TOKEN
+```
+
+---
+
+## Importante
+
+| | Claude Desktop | Claude Code / VSCode | Claude.ai web |
+|---|---|---|---|
+| Necesita Cloudflare | ❌ No | ✅ Sí | ✅ Sí |
+| Necesita servidor corriendo | ❌ No | ✅ Sí | ✅ Sí |
+| Protocolo | stdio (local) | Streamable HTTP `/mcp` | SSE `/sse` + OAuth |
+| Configuración | `claude_desktop_config.json` | `~/.claude/settings.json` | Manual en la UI de la IA |
+
+- La URL de Cloudflare es **temporal** y cambia si reinicias `cloudflared`. Cuando cambie, actualiza `~/.claude/settings.json`.
+- El servidor MCP usa el **puerto 3001** (el CRM PHP usa el 3000, no se pisan).
+- Para una URL fija (`mcp.tinoprop.es`) hay que mover el DNS de `tinoprop.es` a Cloudflare. Ahora está en Hostinger.
+
+---
+
+## Arranque automático del servidor al iniciar sesión (opcional)
+
+Crea `~/Library/LaunchAgents/com.crm.mcp.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>             <string>com.crm.mcp</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/Users/Valentin/Documents/GitHub/CRM/mcp-connector/index.js</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MODE</key> <string>sse</string>
+  </dict>
+  <key>RunAtLoad</key>         <true/>
+  <key>KeepAlive</key>         <true/>
+  <key>StandardOutPath</key>   <string>/tmp/crm-mcp.log</string>
+  <key>StandardErrorPath</key> <string>/tmp/crm-mcp.log</string>
+</dict>
+</plist>
+```
+
+Actívalo:
+```bash
+launchctl load ~/Library/LaunchAgents/com.crm.mcp.plist
+```
