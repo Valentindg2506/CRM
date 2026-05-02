@@ -222,9 +222,122 @@ if (MODE === "sse") {
   const app              = express();
   const sesionesActivas  = {};  // sessionId → transport
 
-  // Endpoint de conexión SSE — el cliente se conecta aquí con su token
+  // ── Almacenes en memoria para OAuth Mock ────────────────────────────────
+  const oauthClients = {}; // clientId → clientSecret
+  const authCodes    = {}; // code → token_del_crm
+
+  app.use(express.urlencoded({ extended: true }));
+
+  // 1. Discovery de OAuth para "Automatic Registration"
+  app.get("/.well-known/oauth-authorization-server", (req, res) => {
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    res.json({
+      issuer: baseUrl,
+      authorization_endpoint: `${baseUrl}/authorize`,
+      token_endpoint: `${baseUrl}/token`,
+      registration_endpoint: `${baseUrl}/register`,
+      scopes_supported: ["mcp"],
+      response_types_supported: ["code"],
+      grant_types_supported: ["authorization_code"],
+      token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post"]
+    });
+  });
+
+  // 2. Dynamic Client Registration (DCR)
+  app.post("/register", express.json(), (req, res) => {
+    const { randomBytes } = require("crypto");
+    const clientId = randomBytes(16).toString("hex");
+    const clientSecret = randomBytes(32).toString("hex");
+    oauthClients[clientId] = clientSecret;
+
+    const clientData = req.body || {};
+    res.status(201).json({
+      client_id: clientId,
+      client_secret: clientSecret,
+      client_id_issued_at: Math.floor(Date.now() / 1000),
+      client_secret_expires_at: 0,
+      client_name: clientData.client_name || "MCP Client",
+      redirect_uris: clientData.redirect_uris || [],
+      grant_types: clientData.grant_types || ["authorization_code"],
+      token_endpoint_auth_method: "client_secret_basic"
+    });
+  });
+
+  // 3. Authorization Endpoint (Página HTML para que el usuario ponga su token)
+  app.get("/authorize", (req, res) => {
+    const { redirect_uri, state } = req.query;
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Conectar CRM a IA</title>
+        <style>
+          body { font-family: system-ui, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f9f9f9; }
+          .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+          h2 { margin-top: 0; color: #333; }
+          input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+          button { width: 100%; padding: 10px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+          button:hover { background: #005bb5; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h2>Autorizar IA</h2>
+          <p>Introduce tu token del CRM para conectar con la inteligencia artificial.</p>
+          <form method="POST" action="/authorize">
+            <input type="hidden" name="redirect_uri" value="${redirect_uri || ''}">
+            <input type="hidden" name="state" value="${state || ''}">
+            <input type="text" name="crm_token" placeholder="Ej: f3b1c9... (64 caracteres)" required>
+            <button type="submit">Conectar</button>
+          </form>
+        </div>
+      </body>
+      </html>
+    `);
+  });
+
+  // 4. Procesa y aprueba la autorización
+  app.post("/authorize", (req, res) => {
+    const { redirect_uri, state, crm_token } = req.body;
+    if (!redirect_uri) return res.status(400).send("Falta redirect_uri");
+    
+    // Generamos un código temporal
+    const { randomBytes } = require("crypto");
+    const code = randomBytes(16).toString("hex");
+    authCodes[code] = crm_token;
+
+    // Redirigir de vuelta al redirect_uri con el código
+    const url = new URL(redirect_uri);
+    url.searchParams.set("code", code);
+    if (state) url.searchParams.set("state", state);
+    
+    res.redirect(url.toString());
+  });
+
+  // 5. Token Endpoint (Cambia el código temporal por el access_token = el CRM token)
+  app.post("/token", express.urlencoded({ extended: true }), (req, res) => {
+    const { code } = req.body;
+    if (!code || !authCodes[code]) {
+      return res.status(400).json({ error: "invalid_grant" });
+    }
+    
+    const trueToken = authCodes[code];
+    delete authCodes[code]; // Un solo uso
+
+    res.json({
+      access_token: trueToken,
+      token_type: "Bearer",
+      expires_in: 315360000 // 10 años
+    });
+  });
+
+  // Endpoint de conexión SSE — el cliente se conecta aquí con su token por Query o Bearer Auth
   app.get("/sse", async (req, res) => {
-    const token = req.query.token || "";
+    let token = req.query.token || "";
+    if (!token && req.headers.authorization) {
+      token = req.headers.authorization.replace(/^Bearer\s/i, "").trim();
+    }
     if (token.length < 32) {
       res.status(401).json({ error: "Token inválido. Genera uno en el CRM → Ajustes → Conector Claude (MCP)" });
       return;

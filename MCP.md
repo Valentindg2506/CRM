@@ -1,115 +1,82 @@
-El esquema final
+## MCP Connector en este portátil
 
-MacBook Air i7 (siempre encendida)
-┌──────────────────────────────────────────┐
-│  node index.js  (pm2, corre siempre)     │
-│  Cloudflare Tunnel → URL HTTPS pública   │
-└──────────────────────────────────────────┘
-          │ internet / WiFi
-    ┌─────┴──────┐
-    ▼            ▼
-Tu Linux         Mac otra persona
-claude.ai        Claude Desktop
-(navegador)      → misma URL pública
-→ URL pública
-Pasos para montarlo en la MacBook Air
-1 — Instala Node.js en el Mac
+Estado actual:
 
-Abre una terminal en el Mac y ejecuta:
+- El CRM corre localmente en `http://localhost:3000`.
+- El túnel público está activo en este portátil mientras siga abierto el proceso de `cloudflared`.
+- URL pública actual: `https://humanities-stream-reynolds-practitioner.trycloudflare.com`
 
+### URL que debes poner en la IA
 
-# Con Homebrew (si lo tienes)
-brew install node
+La URL del conector MCP es siempre la ruta `/sse` con el token del CRM:
 
-# O descarga el instalador desde nodejs.org
-Comprueba:
+`https://humanities-stream-reynolds-practitioner.trycloudflare.com/sse?token=TU_TOKEN`
 
+`TU_TOKEN` no es tu contraseña. Es el token MCP que generas dentro del CRM en `Ajustes → Conector Claude (MCP)`.
 
-node --version   # tiene que ser 18 o superior
-2 — Copia la carpeta mcp-connector/ al Mac
+### Cómo sacar el token en el CRM
 
-Desde tu servidor o desde el portátil Linux:
+1. Entra al CRM.
+2. Ve a `Ajustes → Conector Claude (MCP)`.
+3. Pulsa `Generar token` o copia el token si ya existe.
+4. Ese token suele tener 64 caracteres hexadecimales.
 
+### Cómo configurarlo en Claude.ai
 
-scp -r usuario@tuservidor.com:/var/www/html/CRM/mcp-connector ~/mcp-connector
-3 — Instala dependencias
+1. Abre `claude.ai`.
+2. Entra a tu perfil.
+3. Ve a `Settings → Integrations`.
+4. Añade un conector MCP nuevo.
+5. Pega esta URL:
 
+`https://humanities-stream-reynolds-practitioner.trycloudflare.com/sse?token=TU_TOKEN`
 
-cd ~/mcp-connector
-npm install
-4 — Crea el archivo .env
+Si Claude te pide el tipo de conexión, elige `SSE` o `Remote URL`.
 
-Dentro de ~/mcp-connector/.env:
+### Cómo configurarlo en Claude Desktop
 
+En `~/Library/Application Support/Claude/claude_desktop_config.json`, añade algo así:
 
-CRM_URL=https://tudominio.com
-MODE=sse
-PORT=3000
-5 — Instala pm2 para que corra siempre
-
-
-npm install -g pm2
-pm2 start ~/mcp-connector/index.js --name crm-mcp
-pm2 save
-pm2 startup   # sigue las instrucciones que imprime, arranca solo al reiniciar el Mac
-Comprueba que está corriendo:
-
-
-pm2 status
-# o abre en el navegador del Mac: http://localhost:3000/health
-6 — Instala Cloudflare Tunnel para tener URL pública
-
-
-brew install cloudflared
-Crea el túnel (solo la primera vez):
-
-
-cloudflared tunnel login          # abre el navegador, autoriza con tu cuenta Cloudflare
-cloudflared tunnel create crm-mcp # crea el túnel, apunta el ID que te da
-Crea el archivo de configuración ~/.cloudflared/config.yml:
-
-
-tunnel: crm-mcp
-credentials-file: /Users/TU_USUARIO/.cloudflared/AQUI_EL_ID.json
-
-ingress:
-  - hostname: mcp.tudominio.com
-    service: http://localhost:3000
-  - service: http_status:404
-Añade el subdominio en Cloudflare DNS:
-
-
-cloudflared tunnel route dns crm-mcp mcp.tudominio.com
-Arranca el túnel con pm2 también:
-
-
-pm2 start "cloudflared tunnel run crm-mcp" --name cloudflare-tunnel
-pm2 save
-7 — Resultado
-
-Tu servidor queda accesible en https://mcp.tudominio.com de forma permanente y con HTTPS.
-
-Cómo configura cada usuario
-Tú (Linux, claude.ai en el navegador):
-
-En claude.ai → perfil → Settings → Integrations → añadir conector MCP con la URL:
-
-
-https://mcp.tudominio.com/sse?token=TU_TOKEN
-La otra persona (Mac, Claude Desktop):
-
-Edita ~/Library/Application Support/Claude/claude_desktop_config.json:
-
-
+```json
 {
   "mcpServers": {
     "crm": {
-      "url": "https://mcp.tudominio.com/sse?token=TOKEN_DE_ESA_PERSONA"
+      "url": "https://humanities-stream-reynolds-practitioner.trycloudflare.com/sse?token=TU_TOKEN"
     }
   }
 }
-Cada uno usa su propio token del CRM, así cada uno ve sus propios datos.
+```
 
-Si no tienes dominio en Cloudflare o no quieres complicarlo con el subdominio, Cloudflare también da URLs gratuitas aleatorias con cloudflared tunnel --url http://localhost:3000 — aunque cambian cada vez que reinicias. Con el dominio propio es permanente.
+### Cómo usarlo en cualquier otra IA o cliente MCP
 
-¿Tienes ya dominio en Cloudflare o necesitas la versión sin dominio?
+Usa la misma URL SSE. Si el cliente soporta conectar a una URL MCP remota, pega exactamente:
+
+`https://humanities-stream-reynolds-practitioner.trycloudflare.com/sse?token=TU_TOKEN`
+
+Compatibilidad real:
+
+- Claude.ai y clientes MCP que acepten una URL SSE remota con token suelen funcionar con esta configuración.
+- Perplexity y otros clientes corporativos suelen pedir `automatic registration` o un flujo OAuth para conectarse. Este conector ya implementa el registro automático OAuth, por lo que podrás configurarlo.
+  - Para Perplexity u otros que pidan la URL del servidor MCP en vez de la de SSE, pon: `https://humanities-stream-reynolds-practitioner.trycloudflare.com` y ellos usarán el registro automático. Cuando lo hagan, se abrirá una ventana tipo "Autorizar IA" donde deberás pegar tu token del CRM de 64 caracteres.
+
+### Pruebas rápidas
+
+Health check:
+
+```bash
+curl https://humanities-stream-reynolds-practitioner.trycloudflare.com/health
+```
+
+Prueba de SSE con token inválido:
+
+```bash
+curl -i 'https://humanities-stream-reynolds-practitioner.trycloudflare.com/sse?token=abc'
+```
+
+### Importante
+
+- Esta URL es temporal y depende de que el proceso de `cloudflared` siga corriendo en este portátil.
+- Si reinicias el portátil o cierras `cloudflared`, la URL puede cambiar.
+- Si quieres una URL fija tipo `mcp.tinoprop.es`, hay que mover el DNS de `tinoprop.es` a Cloudflare. Ahora mismo ese dominio sigue en Hostinger, por eso no pude publicar un subdominio estable ahí.
+
+Si quieres, el siguiente paso es dejar este túnel arrancando solo al iniciar sesión en macOS para que no tengas que tocar nada.
