@@ -38,6 +38,9 @@ async function api(token, action, params = {}, method = "GET", body = null) {
       url.searchParams.set(k, String(v));
     }
   }
+  
+  console.log(`[API CALL] action=${action} token=${token ? token.slice(0,6)+'...' : 'NONE'}`);
+  
   const opts = {
     method,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -46,6 +49,8 @@ async function api(token, action, params = {}, method = "GET", body = null) {
 
   const res  = await fetch(url.toString(), opts);
   const text = await res.text();
+  console.log(`[API RESPONSE] action=${action} status=${res.status} body=${text.slice(0, 100)}`);
+  
   if (!res.ok) throw new Error(`API ${res.status}: ${text.slice(0, 300)}`);
   try {
     return JSON.parse(text);
@@ -149,6 +154,111 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "crear_tarea",
+    description: "Crea una nueva tarea o recordatorio de seguimiento en la agenda.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        titulo: { type: "string" },
+        tipo: { type: "string", enum: ["llamada", "email", "reunion", "visita", "otro"] },
+        fecha_vencimiento: { type: "string", description: "Formato YYYY-MM-DD HH:MM:SS" },
+        prospecto_id: { type: "number" },
+        descripcion: { type: "string" }
+      },
+      required: ["titulo", "tipo"],
+    },
+  },
+  {
+    name: "completar_tarea",
+    description: "Marca una tarea pendiente como finalizada.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "number" } },
+      required: ["id"],
+    },
+  },
+  {
+    name: "actualizar_prospecto",
+    description: "Actualiza el estado de pipeline, temperatura u otros detalles clave de un prospecto.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "number" },
+        etapa: { type: "string", enum: ["nuevo_lead", "contactado", "seguimiento", "visita_programada", "negociacion", "captado", "descartado"] },
+        temperatura: { type: "string", enum: ["frio", "templado", "caliente"] },
+        notas_internas: { type: "string" }
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "listar_automatizaciones",
+    description: "Devuelve todos los flujos de automatizaciones o campañas de marketing que la IA puede activar.",
+    inputSchema: { type: "object", properties: {} }
+  },
+  {
+    name: "iniciar_automatizacion",
+    description: "Lanza manualmente un motor de automatización sobre un usuario o cliente.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        automatizacion_id: { type: "number" },
+        prospecto_id: { type: "number" }
+      },
+      required: ["automatizacion_id", "prospecto_id"]
+    }
+  },
+  {
+    name: "enviar_whatsapp",
+    description: "Usa el canal oficial del CRM para enviar un mensaje instantáneo de WhatsApp corporativo.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prospecto_id: { type: "number" },
+        mensaje: { type: "string" }
+      },
+      required: ["prospecto_id", "mensaje"]
+    }
+  },
+  {
+    name: "enviar_email",
+    description: "Manda un correo de seguimiento comercial desde el CRM.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prospecto_id: { type: "number" },
+        asunto: { type: "string" },
+        cuerpo_html: { type: "string" }
+      },
+      required: ["prospecto_id", "asunto", "cuerpo_html"]
+    }
+  },
+  {
+    name: "listar_propiedades",
+    description: "Busca en el catálogo de inmuebles del CRM para enseñar u ofrecer a los leads.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        busqueda: { type: "string" },
+        estado: { type: "string", enum: ["disponible", "reservada", "vendida", "alquilada"] },
+        precio_maximo: { type: "number" }
+      }
+    }
+  },
+  {
+    name: "generar_presupuesto",
+    description: "Esboza un presupuesto o propuesta para el cliente.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prospecto_id: { type: "number" },
+        total: { type: "number" },
+        detalles: { type: "string", description: "Conceptos u honorarios de la intermediación" }
+      },
+      required: ["prospecto_id", "total"]
+    }
+  }
 ];
 
 // ── Crear una instancia de servidor MCP para un token concreto ─────────────
@@ -203,6 +313,33 @@ function crearServidor(token) {
             solo_hoy: args.solo_hoy ? 1 : 0,
           });
           break;
+        case "crear_tarea":
+          data = await api(token, "crear_tarea", {}, "POST", args);
+          break;
+        case "completar_tarea":
+          data = await api(token, "completar_tarea", {}, "POST", args);
+          break;
+        case "actualizar_prospecto":
+          data = await api(token, "actualizar_prospecto", {}, "POST", args);
+          break;
+        case "listar_automatizaciones":
+          data = await api(token, "automatizaciones", {});
+          break;
+        case "iniciar_automatizacion":
+          data = await api(token, "iniciar_automatizacion", {}, "POST", args);
+          break;
+        case "enviar_whatsapp":
+          data = await api(token, "enviar_whatsapp", {}, "POST", args);
+          break;
+        case "enviar_email":
+          data = await api(token, "enviar_email", {}, "POST", args);
+          break;
+        case "listar_propiedades":
+          data = await api(token, "propiedades", { q: args.busqueda, estado: args.estado, max: args.precio_maximo });
+          break;
+        case "generar_presupuesto":
+          data = await api(token, "generar_presupuesto", {}, "POST", args);
+          break;
         default:
           return { content: [{ type: "text", text: `Herramienta desconocida: ${name}` }], isError: true };
       }
@@ -223,6 +360,19 @@ if (MODE === "sse") {
   const app              = express();
   const sesionesActivas  = {};  // sessionId → transport
 
+  // Habilitar CORS para que IAs web (como Claude web y Perplexity) puedan conectarse
+  app.use((req, res, next) => {
+    const origin = req.headers.origin || "*";
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-requested-with");
+    res.header("Access-Control-Allow-Credentials", "true");
+    if (req.method === "OPTIONS") {
+      return res.status(200).end();
+    }
+    next();
+  });
+
   // ── Almacenes en memoria para OAuth Mock ────────────────────────────────
   const oauthClients = {}; // clientId → clientSecret
   const authCodes    = {}; // code → token_del_crm
@@ -231,7 +381,7 @@ if (MODE === "sse") {
 
   // 1. Discovery de OAuth para "Automatic Registration"
   app.get("/.well-known/oauth-authorization-server", (req, res) => {
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const baseUrl = `https://${req.get("host")}`;
     res.json({
       issuer: baseUrl,
       authorization_endpoint: `${baseUrl}/authorize`,
@@ -246,6 +396,7 @@ if (MODE === "sse") {
 
   // 2. Dynamic Client Registration (DCR)
   app.post("/register", express.json(), (req, res) => {
+    console.log("[OAUTH] /register req.body:", req.body);
     const clientId = randomBytes(16).toString("hex");
     const clientSecret = randomBytes(32).toString("hex");
     oauthClients[clientId] = clientSecret;
@@ -259,12 +410,15 @@ if (MODE === "sse") {
       client_name: clientData.client_name || "MCP Client",
       redirect_uris: clientData.redirect_uris || [],
       grant_types: clientData.grant_types || ["authorization_code"],
-      token_endpoint_auth_method: "client_secret_basic"
+      response_types: clientData.response_types || ["code"],
+      token_endpoint_auth_method: clientData.token_endpoint_auth_method || "client_secret_post",
+      logo_uri: clientData.logo_uri || ""
     });
   });
 
   // 3. Authorization Endpoint (Página HTML para que el usuario ponga su token)
   app.get("/authorize", (req, res) => {
+    console.log("[OAUTH] /authorize req.query:", req.query);
     const { redirect_uri, state } = req.query;
     res.send(`
       <!DOCTYPE html>
@@ -315,9 +469,20 @@ if (MODE === "sse") {
   });
 
   // 5. Token Endpoint (Cambia el código temporal por el access_token = el CRM token)
-  app.post("/token", express.urlencoded({ extended: true }), (req, res) => {
-    const { code } = req.body;
+  app.post("/token", express.urlencoded({ extended: true }), express.json(), (req, res) => {
+    console.log("[OAUTH] /token req.body:", req.body);
+    let clientId, clientSecret;
+    const authHeader = req.headers.authorization;
+
+    if (authHeader && authHeader.toLowerCase().startsWith('basic ')) {
+        const base64auth = authHeader.split(' ')[1];
+        const decoded = Buffer.from(base64auth, 'base64').toString('utf-8');
+        [clientId, clientSecret] = decoded.split(':');
+    }
+
+    const code = req.body.code || req.query.code;
     if (!code || !authCodes[code]) {
+      console.log("Error de logueo, code faltante o inválido:", code);
       return res.status(400).json({ error: "invalid_grant" });
     }
     
