@@ -818,7 +818,17 @@ if (MODE === "sse") {
     }
     const transport = new SSEServerTransport("/messages", res);
     sesionesSSE[transport.sessionId] = transport;
-    res.on("close", () => { delete sesionesSSE[transport.sessionId]; });
+
+    // Ping cada 25s para evitar que Cloudflare corte la conexión SSE por inactividad (~100s timeout)
+    const keepalive = setInterval(() => {
+      if (!res.writableEnded) res.write(": ping\n\n");
+    }, 25000);
+
+    res.on("close", () => {
+      clearInterval(keepalive);
+      delete sesionesSSE[transport.sessionId];
+    });
+
     const servidor = crearServidor(token);
     await servidor.connect(transport);
   });

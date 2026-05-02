@@ -1005,6 +1005,16 @@ try {
             break;
         }
 
+        // ── DEBUG temporal: solo accesible con token válido ────────────────────
+        case 'schema': {
+            $tabla = preg_replace('/[^a-z_]/', '', strtolower($_GET['tabla'] ?? ''));
+            if (!$tabla) { err('Parámetro tabla requerido'); break; }
+            $stmt = $db->prepare("SELECT COLUMN_NAME, COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION");
+            $stmt->execute([$tabla]);
+            ok(['tabla' => $tabla, 'columnas' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+            break;
+        }
+
         default:
             err("Acción desconocida: '$action'");
     }
