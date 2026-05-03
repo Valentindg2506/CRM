@@ -33,6 +33,18 @@ function getMcpUser(PDO $db): ?array {
 $db      = getDB();
 $user    = getMcpUser($db);
 
+// ── Diagnóstico temporal: test_auth no requiere token ─────────────────────
+if (($_GET['action'] ?? '') === 'test_auth') {
+    $t = trim($_GET['t'] ?? '');
+    if (strlen($t) < 32) { echo json_encode(['valid' => false, 'reason' => 'token_corto']); exit; }
+    $stmt2 = $db->prepare("SELECT u.id, u.nombre, u.rol, u.activo FROM usuarios u JOIN usuario_ajustes ua ON ua.usuario_id = u.id WHERE ua.clave = 'mcp_token' AND ua.valor = ? LIMIT 1");
+    $stmt2->execute([$t]);
+    $row = $stmt2->fetch(PDO::FETCH_ASSOC);
+    if (!$row) { echo json_encode(['valid' => false, 'reason' => 'no_encontrado_en_bd']); exit; }
+    if (!$row['activo']) { echo json_encode(['valid' => false, 'reason' => 'usuario_inactivo', 'usuario' => $row['nombre']]); exit; }
+    echo json_encode(['valid' => true, 'usuario' => $row['nombre'], 'rol' => $row['rol']]); exit;
+}
+
 if (!$user) {
     http_response_code(401);
     echo json_encode(['error' => 'Token MCP inválido o expirado. Genera uno en Ajustes → Conector Claude (MCP).']);
