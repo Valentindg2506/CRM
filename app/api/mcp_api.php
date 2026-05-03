@@ -9,6 +9,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/email.php';
 
+define('MCP_API_VERSION', '3');
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Headers: Authorization, Content-Type');
@@ -231,10 +232,8 @@ try {
             $h->execute([$id]);
             $p['historial_reciente'] = $h->fetchAll(PDO::FETCH_ASSOC);
 
-            // Tareas relacionadas
-            $t = $db->prepare("SELECT id, titulo, tipo, estado, DATE_FORMAT(fecha_vencimiento,'%d/%m/%Y') as vence FROM tareas WHERE prospecto_id = ? AND estado != 'completada' ORDER BY fecha_vencimiento ASC LIMIT 5");
-            $t->execute([$id]);
-            $p['tareas_pendientes'] = $t->fetchAll(PDO::FETCH_ASSOC);
+            // Tareas relacionadas (por cliente si existe, si no las últimas del agente)
+            $p['tareas_pendientes'] = [];
 
             unset($p['propietarios_json']);
             ok(['prospecto' => $p]);
@@ -448,10 +447,8 @@ try {
             if ($soloHoy) { $where[] = 'DATE(t.fecha_vencimiento) = CURDATE()'; }
 
             $sql  = "SELECT t.id, t.titulo, t.tipo, t.estado, t.prioridad,
-                            DATE_FORMAT(t.fecha_vencimiento,'%d/%m/%Y %H:%i') as vencimiento,
-                            p.nombre as prospecto_nombre
+                            DATE_FORMAT(t.fecha_vencimiento,'%d/%m/%Y %H:%i') as vencimiento
                      FROM tareas t
-                     LEFT JOIN prospectos p ON t.prospecto_id = p.id
                      WHERE " . implode(' AND ', $where) .
                     " ORDER BY t.fecha_vencimiento ASC LIMIT 50";
 
@@ -469,8 +466,8 @@ try {
             $tipo    = in_array($body['tipo'] ?? '', $tiposOk) ? $body['tipo'] : 'otro';
 
             $ins = $db->prepare(
-                "INSERT INTO tareas (titulo, tipo, descripcion, prioridad, estado, fecha_vencimiento, asignado_a, creado_por, prospecto_id, cliente_id, propiedad_id)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+                "INSERT INTO tareas (titulo, tipo, descripcion, prioridad, estado, fecha_vencimiento, asignado_a, creado_por, cliente_id, propiedad_id)
+                 VALUES (?,?,?,?,?,?,?,?,?,?)"
             );
             $ins->execute([
                 $titulo, $tipo,
@@ -480,7 +477,6 @@ try {
                 $body['fecha_vencimiento'] ?? null,
                 $userId,
                 $userId,
-                isset($body['prospecto_id']) ? (int)$body['prospecto_id'] : null,
                 isset($body['cliente_id'])   ? (int)$body['cliente_id']   : null,
                 isset($body['propiedad_id']) ? (int)$body['propiedad_id'] : null,
             ]);
@@ -509,7 +505,7 @@ try {
             $max   = isset($_GET['max']) ? (float)$_GET['max'] : null;
             $limit = min(100, max(1, (int)($_GET['limit'] ?? 20)));
 
-            $where  = ['p.activo = 1'];
+            $where  = ['1=1'];
             $params = [];
             if (!$isAdmin) { $where[] = 'p.agente_id = ?'; $params[] = $userId; }
             if ($_GET['q'] ?? '') {
@@ -1002,6 +998,531 @@ try {
             $stmt = $db->prepare($sql);
             $stmt->execute($params);
             ok(['campanas' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+            break;
+        }
+
+        case 'version': {
+            ok(['version' => MCP_API_VERSION]);
+            break;
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // ACCIONES RÁPIDAS DE PROSPECTOS
+        // ══════════════════════════════════════════════════════════════════════
+
+        case 'programar_contacto': {
+            // Cambiar fecha de próximo contacto y/o próxima acción
+            // Acepta un ID o un array de IDs (campo ids[] o ids separados por coma)
+            $fecha  = trim($body['fecha'] ?? '');          // YYYY-MM-DD
+            $accion = trim($body['proxima_accion'] ?? '');
+            $temp   = trim($body['temperatura'] ?? '');
+            $etapa  = trim($body['etapa'] ?? '');
+
+            // Resolver IDs: puede venir como id, ids (array) o ids (string "1,2,3")
+            $ids = [];
+            if (!empty($body['id']))  $ids[] = (int)$body['id'];
+            if (!empty($body['ids'])) {
+                $raw = is_array($body['ids']) ? $body['ids'] : explode(',', $body['ids']);
+                foreach ($raw as $r) { $v = (int)trim($r); if ($v > 0) $ids[] = $v; }
+            }
+            $ids = array_unique(array_filter($ids));
+            if (empty($ids)) { err('Debes indicar id o ids de los prospectos'); break; }
+
+            $campos = []; $params = [];
+            if ($fecha)  { $campos[] = 'fecha_proximo_contacto = ?'; $params[] = $fecha; }
+            if ($accion) { $campos[] = 'proxima_accion = ?';         $params[] = $accion; }
+
+            $tempsOk = ['frio','templado','caliente'];
+            if ($temp && in_array($temp, $tempsOk)) { $campos[] = 'temperatura = ?'; $params[] = $temp; }
+
+            $etapasOk = ['nuevo_lead','contactado','seguimiento','visita_programada','en_negociacion','captado','descartado'];
+            if ($etapa && in_array($etapa, $etapasOk)) { $campos[] = 'etapa = ?'; $params[] = $etapa; }
+
+            if (empty($campos)) { err('Debes indicar al menos fecha, proxima_accion, temperatura o etapa'); break; }
+
+            $ph = implode(',', array_fill(0, count($ids), '?'));
+            $af = $isAdmin ? '' : " AND agente_id = $userId";
+            $sql = "UPDATE prospectos SET " . implode(', ', $campos) . ", updated_at = NOW() WHERE id IN ($ph) $af";
+            $db->prepare($sql)->execute(array_merge($params, $ids));
+
+            ok(['mensaje' => count($ids) . ' prospecto(s) actualizados', 'ids' => $ids]);
+            break;
+        }
+
+        case 'convertir_cliente': {
+            $id = (int)($body['prospecto_id'] ?? $body['id'] ?? 0);
+            if (!$id) { err('prospecto_id requerido'); break; }
+
+            [$af, $ap] = agentFilter($isAdmin, $userId);
+            $stmt = $db->prepare("SELECT * FROM prospectos WHERE id = ? $af LIMIT 1");
+            $stmt->execute(array_merge([$id], $ap));
+            $p = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$p) { err('Prospecto no encontrado o sin acceso', 403); break; }
+
+            // Verificar si ya existe cliente con ese email/teléfono
+            if ($p['email']) {
+                $dup = $db->prepare("SELECT id FROM clientes WHERE email = ? LIMIT 1");
+                $dup->execute([$p['email']]);
+                if ($dup->fetchColumn()) { err('Ya existe un cliente con ese email'); break; }
+            }
+
+            $tipo = $body['tipo'] ?? 'vendedor';
+            $ins  = $db->prepare("INSERT INTO clientes (nombre, apellidos, email, telefono, tipo, localidad, provincia, notas, agente_id, activo, created_at) VALUES (?,?,?,?,?,?,?,?,?,1,NOW())");
+            $ins->execute([$p['nombre'], null, $p['email'], $p['telefono'], $tipo, $p['localidad'], $p['provincia'], $p['notas'], $p['agente_id'] ?? $userId]);
+            $clienteId = (int)$db->lastInsertId();
+
+            // Marcar prospecto como captado
+            $db->prepare("UPDATE prospectos SET etapa = 'captado', activo = 0, updated_at = NOW() WHERE id = ?")->execute([$id]);
+
+            ok(['cliente_id' => $clienteId, 'mensaje' => "Prospecto convertido a cliente #$clienteId"]);
+            break;
+        }
+
+        case 'mover_etapas': {
+            // Mover uno o varios prospectos a una etapa
+            $etapa  = trim($body['etapa'] ?? '');
+            $etapasOk = ['nuevo_lead','contactado','seguimiento','visita_programada','en_negociacion','captado','descartado'];
+            if (!in_array($etapa, $etapasOk)) { err('Etapa inválida. Válidas: ' . implode(', ', $etapasOk)); break; }
+
+            $ids = [];
+            if (!empty($body['id']))  $ids[] = (int)$body['id'];
+            if (!empty($body['ids'])) {
+                $raw = is_array($body['ids']) ? $body['ids'] : explode(',', $body['ids']);
+                foreach ($raw as $r) { $v = (int)trim($r); if ($v > 0) $ids[] = $v; }
+            }
+            $ids = array_unique(array_filter($ids));
+            if (empty($ids)) { err('Debes indicar id o ids'); break; }
+
+            $ph = implode(',', array_fill(0, count($ids), '?'));
+            $af = $isAdmin ? '' : " AND agente_id = $userId";
+            $db->prepare("UPDATE prospectos SET etapa = ?, updated_at = NOW() WHERE id IN ($ph) $af")
+               ->execute(array_merge([$etapa], $ids));
+
+            ok(['mensaje' => count($ids) . ' prospecto(s) movidos a etapa "' . $etapa . '"', 'ids' => $ids]);
+            break;
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // NOTAS DE CLIENTES
+        // ══════════════════════════════════════════════════════════════════════
+
+        case 'anadir_nota_cliente': {
+            $clienteId = (int)($body['cliente_id'] ?? 0);
+            $contenido = trim($body['contenido'] ?? '');
+            if (!$clienteId || !$contenido) { err('cliente_id y contenido son obligatorios'); break; }
+
+            [$af, $ap] = agentFilter($isAdmin, $userId, 'c');
+            $chk = $db->prepare("SELECT id FROM clientes c WHERE id = ? $af LIMIT 1");
+            $chk->execute(array_merge([$clienteId], $ap));
+            if (!$chk->fetch()) { err('Cliente no encontrado o sin acceso', 403); break; }
+
+            // Guardar como evento de calendario vinculado al cliente
+            $tipo  = $body['tipo'] ?? 'nota';
+            $db->prepare("INSERT INTO calendario_eventos (titulo, tipo, fecha_inicio, fecha_fin, todo_dia, cliente_id, usuario_id, descripcion) VALUES (?,?,NOW(),NOW(),1,?,?,?)")
+               ->execute(["Nota: " . substr($contenido, 0, 50), $tipo, $clienteId, $userId, $contenido]);
+
+            ok(['mensaje' => 'Nota añadida al cliente', 'id' => (int)$db->lastInsertId()]);
+            break;
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // TAREAS — ACTUALIZAR / CANCELAR
+        // ══════════════════════════════════════════════════════════════════════
+
+        case 'actualizar_tarea': {
+            $id = (int)($body['id'] ?? 0);
+            if (!$id) { err('ID requerido'); break; }
+
+            $stmt = $db->prepare("SELECT id FROM tareas WHERE id = ? AND (asignado_a = ? OR creado_por = ?) LIMIT 1");
+            $stmt->execute([$id, $userId, $userId]);
+            if (!$stmt->fetch()) { err('Tarea no encontrada o sin acceso', 403); break; }
+
+            $campos = []; $params = [];
+            $editables = ['titulo','descripcion','tipo','prioridad','fecha_vencimiento'];
+            foreach ($editables as $f) {
+                if (isset($body[$f])) { $campos[] = "$f = ?"; $params[] = $body[$f]; }
+            }
+            $estadosOk = ['pendiente','en_progreso','completada','cancelada'];
+            if (!empty($body['estado']) && in_array($body['estado'], $estadosOk)) {
+                $campos[] = 'estado = ?'; $params[] = $body['estado'];
+                if ($body['estado'] === 'completada') { $campos[] = 'fecha_completada = NOW()'; }
+            }
+            if (empty($campos)) { err('Nada que actualizar'); break; }
+
+            $params[] = $id;
+            $db->prepare("UPDATE tareas SET " . implode(', ', $campos) . ", updated_at = NOW() WHERE id = ?")->execute($params);
+            ok(['mensaje' => 'Tarea actualizada correctamente']);
+            break;
+        }
+
+        case 'cancelar_tarea': {
+            $id = (int)($body['id'] ?? 0);
+            if (!$id) { err('ID requerido'); break; }
+            $stmt = $db->prepare("UPDATE tareas SET estado = 'cancelada', updated_at = NOW() WHERE id = ? AND (asignado_a = ? OR creado_por = ?)");
+            $stmt->execute([$id, $userId, $userId]);
+            if (!$stmt->rowCount()) { err('Tarea no encontrada o sin acceso', 403); break; }
+            ok(['mensaje' => 'Tarea cancelada']);
+            break;
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // VISITAS — ACTUALIZAR ESTADO
+        // ══════════════════════════════════════════════════════════════════════
+
+        case 'actualizar_visita': {
+            $id     = (int)($body['id'] ?? 0);
+            $estado = trim($body['estado'] ?? '');
+            if (!$id) { err('ID requerido'); break; }
+
+            $estadosOk = ['programada','realizada','cancelada','no_presentado'];
+            if (!in_array($estado, $estadosOk)) { err('Estado inválido. Válidos: ' . implode(', ', $estadosOk)); break; }
+
+            $af = $isAdmin ? '' : " AND agente_id = $userId";
+            $stmt = $db->prepare("UPDATE visitas SET estado = ?, updated_at = NOW() WHERE id = ? $af");
+            $stmt->execute([$estado, $id]);
+            if (!$stmt->rowCount()) { err('Visita no encontrada o sin acceso', 403); break; }
+
+            ok(['mensaje' => "Visita marcada como $estado"]);
+            break;
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // CALENDARIO
+        // ══════════════════════════════════════════════════════════════════════
+
+        case 'calendario': {
+            $desde  = $_GET['desde'] ?? date('Y-m-d');
+            $hasta  = $_GET['hasta'] ?? date('Y-m-d', strtotime('+30 days'));
+            $limit  = min(100, max(1, (int)($_GET['limit'] ?? 50)));
+            $af     = $isAdmin ? '' : " AND e.usuario_id = $userId";
+
+            $stmt = $db->prepare(
+                "SELECT e.id, e.titulo, e.tipo, e.todo_dia,
+                        DATE_FORMAT(e.fecha_inicio,'%d/%m/%Y %H:%i') as inicio,
+                        DATE_FORMAT(e.fecha_fin,'%d/%m/%Y %H:%i') as fin,
+                        e.ubicacion,
+                        c.nombre as cliente_nombre,
+                        p.titulo as propiedad_titulo
+                 FROM calendario_eventos e
+                 LEFT JOIN clientes c    ON e.cliente_id    = c.id
+                 LEFT JOIN propiedades p ON e.propiedad_id  = p.id
+                 WHERE e.fecha_inicio >= ? AND e.fecha_inicio <= ? $af
+                 ORDER BY e.fecha_inicio ASC LIMIT $limit"
+            );
+            $stmt->execute([$desde . ' 00:00:00', $hasta . ' 23:59:59']);
+            ok(['eventos' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+            break;
+        }
+
+        case 'crear_evento': {
+            $titulo = trim($body['titulo'] ?? '');
+            $inicio = trim($body['fecha_inicio'] ?? '');
+            if (!$titulo || !$inicio) { err('titulo y fecha_inicio son obligatorios'); break; }
+
+            $fin    = $body['fecha_fin']  ?? $inicio;
+            $todoDia = !empty($body['todo_dia']) ? 1 : 0;
+            $tiposOk = ['tarea','reunion','visita','cita','otra'];
+            $tipo   = in_array($body['tipo'] ?? '', $tiposOk) ? $body['tipo'] : 'cita';
+
+            $ins = $db->prepare(
+                "INSERT INTO calendario_eventos (titulo, descripcion, tipo, fecha_inicio, fecha_fin, todo_dia, ubicacion, cliente_id, propiedad_id, usuario_id)
+                 VALUES (?,?,?,?,?,?,?,?,?,?)"
+            );
+            $ins->execute([
+                $titulo,
+                $body['descripcion'] ?? null,
+                $tipo,
+                date('Y-m-d H:i:s', strtotime($inicio)),
+                date('Y-m-d H:i:s', strtotime($fin)),
+                $todoDia,
+                $body['ubicacion'] ?? null,
+                isset($body['cliente_id'])   ? (int)$body['cliente_id']   : null,
+                isset($body['propiedad_id']) ? (int)$body['propiedad_id'] : null,
+                $userId,
+            ]);
+            ok(['id' => (int)$db->lastInsertId(), 'mensaje' => 'Evento creado en el calendario']);
+            break;
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // FINANZAS / COMISIONES
+        // ══════════════════════════════════════════════════════════════════════
+
+        case 'finanzas': {
+            $estado  = $_GET['estado'] ?? '';
+            $tipo    = $_GET['tipo']   ?? '';
+            $limit   = min(100, max(1, (int)($_GET['limit'] ?? 20)));
+            $af      = $isAdmin ? '' : " AND f.agente_id = $userId";
+
+            $where  = ['1=1'];
+            $params = [];
+            if ($estado) { $where[] = 'f.estado = ?'; $params[] = $estado; }
+            if ($tipo)   { $where[] = 'f.tipo = ?';   $params[] = $tipo; }
+
+            $sql = "SELECT f.id, f.tipo, f.concepto, f.importe, f.importe_total, f.estado,
+                           DATE_FORMAT(f.fecha,'%d/%m/%Y') as fecha,
+                           c.nombre as cliente_nombre,
+                           p.titulo as propiedad_titulo
+                    FROM finanzas f
+                    LEFT JOIN clientes c    ON f.cliente_id    = c.id
+                    LEFT JOIN propiedades p ON f.propiedad_id  = p.id
+                    WHERE " . implode(' AND ', $where) . " $af
+                    ORDER BY f.fecha DESC LIMIT $limit";
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+
+            // Totales
+            $totStmt = $db->prepare("SELECT COALESCE(SUM(importe_total),0) as total, estado FROM finanzas f WHERE 1=1 $af GROUP BY estado");
+            $totStmt->execute();
+            $totales = [];
+            foreach ($totStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $totales[$row['estado']] = round((float)$row['total'], 2);
+            }
+
+            ok(['finanzas' => $stmt->fetchAll(PDO::FETCH_ASSOC), 'totales' => $totales]);
+            break;
+        }
+
+        case 'crear_finanza': {
+            $concepto  = trim($body['concepto'] ?? '');
+            $importe   = isset($body['importe']) ? (float)$body['importe'] : null;
+            if (!$concepto || $importe === null) { err('concepto e importe son obligatorios'); break; }
+
+            $tiposOk = ['comision_venta','comision_alquiler','honorarios','gasto','ingreso_otro'];
+            $tipo    = in_array($body['tipo'] ?? '', $tiposOk) ? $body['tipo'] : 'honorarios';
+            $iva     = (float)($body['iva'] ?? 0);
+            $total   = $importe + $iva;
+
+            $ins = $db->prepare(
+                "INSERT INTO finanzas (tipo, concepto, importe, iva, importe_total, fecha, estado, propiedad_id, cliente_id, agente_id, notas)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+            );
+            $ins->execute([
+                $tipo, $concepto, $importe, $iva, $total,
+                $body['fecha'] ?? date('Y-m-d'),
+                $body['estado'] ?? 'pendiente',
+                isset($body['propiedad_id']) ? (int)$body['propiedad_id'] : null,
+                isset($body['cliente_id'])   ? (int)$body['cliente_id']   : null,
+                $userId,
+                $body['notas'] ?? null,
+            ]);
+            ok(['id' => (int)$db->lastInsertId(), 'mensaje' => 'Registro financiero creado']);
+            break;
+        }
+
+        case 'marcar_cobrado': {
+            $id = (int)($body['id'] ?? 0);
+            if (!$id) { err('ID requerido'); break; }
+            $af = $isAdmin ? '' : " AND agente_id = $userId";
+            $stmt = $db->prepare("UPDATE finanzas SET estado = 'cobrado', updated_at = NOW() WHERE id = ? $af");
+            $stmt->execute([$id]);
+            if (!$stmt->rowCount()) { err('Registro no encontrado o sin acceso', 403); break; }
+            ok(['mensaje' => 'Marcado como cobrado']);
+            break;
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // DOCUMENTOS
+        // ══════════════════════════════════════════════════════════════════════
+
+        case 'documentos': {
+            $clienteId   = (int)($_GET['cliente_id'] ?? 0);
+            $propiedadId = (int)($_GET['propiedad_id'] ?? 0);
+            $limit       = min(50, max(1, (int)($_GET['limit'] ?? 20)));
+
+            $where  = ['1=1'];
+            $params = [];
+            if ($clienteId)   { $where[] = 'd.cliente_id = ?';   $params[] = $clienteId; }
+            if ($propiedadId) { $where[] = 'd.propiedad_id = ?'; $params[] = $propiedadId; }
+
+            $sql = "SELECT d.id, d.nombre, d.tipo, d.tamano,
+                           DATE_FORMAT(d.created_at,'%d/%m/%Y') as subido,
+                           c.nombre as cliente_nombre,
+                           p.titulo as propiedad_titulo
+                    FROM documentos d
+                    LEFT JOIN clientes c    ON d.cliente_id    = c.id
+                    LEFT JOIN propiedades p ON d.propiedad_id  = p.id
+                    WHERE " . implode(' AND ', $where) .
+                   " ORDER BY d.created_at DESC LIMIT $limit";
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+            ok(['documentos' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+            break;
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // INFORMES
+        // ══════════════════════════════════════════════════════════════════════
+
+        case 'informe_prospectos': {
+            $af  = $isAdmin ? '' : " AND agente_id = $userId";
+            $afP = $isAdmin ? '' : " AND p.agente_id = $userId";
+
+            // Embudo por etapa
+            $stmt = $db->query("SELECT etapa, COUNT(*) as total, temperatura, AVG(precio_estimado) as precio_medio FROM prospectos WHERE activo = 1 $af GROUP BY etapa, temperatura ORDER BY FIELD(etapa,'nuevo_lead','contactado','seguimiento','visita_programada','en_negociacion','captado','descartado'), temperatura");
+            $embudo = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Por temperatura
+            $stmt = $db->query("SELECT temperatura, COUNT(*) as total FROM prospectos WHERE activo = 1 $af GROUP BY temperatura");
+            $temperaturas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Por prioridad
+            $stmt = $db->query("SELECT prioridad, COUNT(*) as total FROM prospectos WHERE activo = 1 $af GROUP BY prioridad");
+            $prioridades = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Contactar esta semana
+            $stmt = $db->query("SELECT COUNT(*) FROM prospectos p WHERE activo = 1 AND fecha_proximo_contacto BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) $afP");
+            $semana = (int)$stmt->fetchColumn();
+
+            // Vencidos (sin contactar)
+            $stmt = $db->query("SELECT COUNT(*) FROM prospectos p WHERE activo = 1 AND fecha_proximo_contacto < CURDATE() AND etapa NOT IN ('captado','descartado') $afP");
+            $vencidos = (int)$stmt->fetchColumn();
+
+            // Captados este mes
+            $stmt = $db->query("SELECT COUNT(*) FROM prospectos p WHERE etapa = 'captado' AND MONTH(updated_at) = MONTH(CURDATE()) AND YEAR(updated_at) = YEAR(CURDATE()) $afP");
+            $captadosMes = (int)$stmt->fetchColumn();
+
+            ok([
+                'informe' => [
+                    'embudo_por_etapa_temperatura' => $embudo,
+                    'por_temperatura'              => $temperaturas,
+                    'por_prioridad'                => $prioridades,
+                    'a_contactar_esta_semana'      => $semana,
+                    'vencidos_sin_contactar'       => $vencidos,
+                    'captados_este_mes'            => $captadosMes,
+                ]
+            ]);
+            break;
+        }
+
+        case 'informe_finanzas': {
+            $af = $isAdmin ? '' : " AND agente_id = $userId";
+
+            // Por mes (últimos 6)
+            $stmt = $db->query("SELECT DATE_FORMAT(fecha,'%Y-%m') as mes, tipo, SUM(importe_total) as total, COUNT(*) as operaciones FROM finanzas WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH) $af GROUP BY mes, tipo ORDER BY mes DESC, tipo");
+            $porMes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Pendiente de cobro
+            $stmt = $db->query("SELECT tipo, COUNT(*) as registros, SUM(importe_total) as importe FROM finanzas WHERE estado = 'pendiente' $af GROUP BY tipo");
+            $pendiente = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Cobrado este año
+            $stmt = $db->query("SELECT COALESCE(SUM(importe_total),0) FROM finanzas WHERE estado = 'cobrado' AND YEAR(fecha) = YEAR(CURDATE()) $af");
+            $anio = round((float)$stmt->fetchColumn(), 2);
+
+            ok(['informe' => ['por_mes' => $porMes, 'pendiente_cobro' => $pendiente, 'cobrado_anio_actual' => $anio]]);
+            break;
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // PIPELINES / KANBAN
+        // ══════════════════════════════════════════════════════════════════════
+
+        case 'pipeline_kanban': {
+            $pipelineId = (int)($_GET['pipeline_id'] ?? 0);
+            $af = $isAdmin ? '' : " AND pl.created_by = $userId";
+
+            // Listar pipelines disponibles
+            $stmt = $db->query("SELECT pl.id, pl.nombre, pl.descripcion, pl.color, (SELECT COUNT(*) FROM pipeline_items WHERE pipeline_id = pl.id) as total_items FROM pipelines pl WHERE pl.activo = 1 $af ORDER BY pl.id ASC");
+            $pipelines = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            if (!$pipelineId && !empty($pipelines)) $pipelineId = (int)$pipelines[0]['id'];
+
+            $items = [];
+            if ($pipelineId) {
+                $stmt = $db->query("SELECT pe.id, pe.nombre as etapa, pe.color, pe.orden FROM pipeline_etapas pe WHERE pe.pipeline_id = $pipelineId ORDER BY pe.orden ASC");
+                $etapas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+                foreach ($etapas as &$etapa) {
+                    $stmt2 = $db->prepare(
+                        "SELECT pi.id, pi.titulo, pi.valor, pi.prioridad,
+                                COALESCE(p.nombre, c.nombre) as contacto,
+                                pr.titulo as propiedad_titulo
+                         FROM pipeline_items pi
+                         LEFT JOIN prospectos p  ON pi.prospecto_id  = p.id
+                         LEFT JOIN clientes c    ON pi.cliente_id    = c.id
+                         LEFT JOIN propiedades pr ON pi.propiedad_id = pr.id
+                         WHERE pi.etapa_id = ? ORDER BY pi.created_at DESC LIMIT 20"
+                    );
+                    $stmt2->execute([$etapa['id']]);
+                    $etapa['items'] = $stmt2->fetchAll(PDO::FETCH_ASSOC);
+                }
+                $items = $etapas;
+            }
+
+            ok(['pipelines' => $pipelines, 'kanban' => $items, 'pipeline_activo' => $pipelineId]);
+            break;
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // PORTALES INMOBILIARIOS
+        // ══════════════════════════════════════════════════════════════════════
+
+        case 'portales_propiedad': {
+            $propId = (int)($_GET['propiedad_id'] ?? 0);
+            if (!$propId) { err('propiedad_id requerido'); break; }
+
+            // Portales donde está publicada
+            $stmt = $db->prepare(
+                "SELECT po.id, po.nombre, po.url as portal_url,
+                        pp.estado, pp.url_publicacion,
+                        DATE_FORMAT(pp.fecha_publicacion,'%d/%m/%Y') as publicado,
+                        DATE_FORMAT(pp.fecha_actualizacion,'%d/%m/%Y') as actualizado,
+                        pp.notas
+                 FROM portales po
+                 LEFT JOIN propiedad_portales pp ON pp.portal_id = po.id AND pp.propiedad_id = ?
+                 WHERE po.activo = 1
+                 ORDER BY po.nombre ASC"
+            );
+            $stmt->execute([$propId]);
+            ok(['portales' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+            break;
+        }
+
+        case 'publicar_portal': {
+            $propId   = (int)($body['propiedad_id'] ?? 0);
+            $portalId = (int)($body['portal_id'] ?? 0);
+            $accion   = $body['accion'] ?? 'publicar'; // publicar | retirar
+            if (!$propId || !$portalId) { err('propiedad_id y portal_id son obligatorios'); break; }
+
+            if ($accion === 'retirar') {
+                $db->prepare("UPDATE propiedad_portales SET estado = 'retirado', fecha_actualizacion = CURDATE() WHERE propiedad_id = ? AND portal_id = ?")->execute([$propId, $portalId]);
+                ok(['mensaje' => 'Propiedad retirada del portal']);
+            } else {
+                $stmt = $db->prepare("INSERT INTO propiedad_portales (propiedad_id, portal_id, estado, url_publicacion, fecha_publicacion, notas) VALUES (?,?,'publicado',?,CURDATE(),?) ON DUPLICATE KEY UPDATE estado='publicado', url_publicacion=VALUES(url_publicacion), fecha_actualizacion=CURDATE()");
+                $stmt->execute([$propId, $portalId, $body['url'] ?? null, $body['notas'] ?? null]);
+                ok(['mensaje' => 'Propiedad publicada en el portal']);
+            }
+            break;
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // CONTRATOS — ENVIAR
+        // ══════════════════════════════════════════════════════════════════════
+
+        case 'enviar_contrato': {
+            $id = (int)($body['id'] ?? 0);
+            if (!$id) { err('ID requerido'); break; }
+
+            $af = $isAdmin ? '' : " AND ct.usuario_id = $userId";
+            $stmt = $db->prepare("SELECT ct.*, c.email as cliente_email, c.nombre as cliente_nombre FROM contratos ct LEFT JOIN clientes c ON ct.cliente_id = c.id WHERE ct.id = ? $af LIMIT 1");
+            $stmt->execute([$id]);
+            $ct = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$ct) { err('Contrato no encontrado o sin acceso', 403); break; }
+            if (empty($ct['cliente_email'])) { err('El cliente no tiene email registrado'); break; }
+
+            $link   = getenv('APP_URL') ?: 'https://tinoprop.es';
+            $link  .= "/contrato.php?token=" . $ct['token'];
+            $asunto = "Contrato para firmar: " . $ct['titulo'];
+            $cuerpo = "<p>Hola {$ct['cliente_nombre']},</p><p>Le enviamos el contrato <strong>{$ct['titulo']}</strong> para su revisión y firma.</p><p><a href=\"$link\">Firmar contrato</a></p>";
+
+            $enviado = enviarEmail($ct['cliente_email'], $asunto, $cuerpo, true, $userId);
+            if ($enviado) {
+                $db->prepare("UPDATE contratos SET estado = 'enviado', updated_at = NOW() WHERE id = ?")->execute([$id]);
+                ok(['mensaje' => "Contrato enviado a {$ct['cliente_email']}"]);
+            } else {
+                err('Error al enviar el email: ' . (getLastEmailError() ?? 'Error desconocido'));
+            }
             break;
         }
 

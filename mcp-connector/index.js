@@ -486,6 +486,255 @@ const TOOLS = [
       required: ["q"],
     },
   },
+
+  // ── ACCIONES RÁPIDAS DE PROSPECTOS ────────────────────────────────────────
+  {
+    name: "programar_contacto",
+    description: "Cambia la fecha de próximo contacto, la próxima acción, temperatura o etapa de uno o varios prospectos. Acepta un id o una lista de ids (ej: '1,2,3' o array). Muy útil para planificar el seguimiento del día o semana.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id:             { type: "number", description: "ID de un solo prospecto" },
+        ids:            { type: "string", description: "IDs separados por coma: '1,2,3'" },
+        fecha:          { type: "string", description: "Fecha próximo contacto YYYY-MM-DD" },
+        proxima_accion: { type: "string", description: "Descripción de la próxima acción a hacer" },
+        temperatura:    { type: "string", enum: ["frio","templado","caliente"] },
+        etapa:          { type: "string", enum: ["nuevo_lead","contactado","seguimiento","visita_programada","en_negociacion","captado","descartado"] },
+      },
+    },
+  },
+  {
+    name: "mover_etapas",
+    description: "Mueve uno o varios prospectos a una etapa del pipeline de captación.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id:    { type: "number" },
+        ids:   { type: "string", description: "IDs separados por coma" },
+        etapa: { type: "string", enum: ["nuevo_lead","contactado","seguimiento","visita_programada","en_negociacion","captado","descartado"] },
+      },
+      required: ["etapa"],
+    },
+  },
+  {
+    name: "convertir_a_cliente",
+    description: "Convierte un prospecto captado en cliente del CRM. Crea el registro en la tabla de clientes y marca el prospecto como captado.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prospecto_id: { type: "number" },
+        tipo:         { type: "string", enum: ["comprador","vendedor","inquilino","propietario","inversor"], default: "vendedor" },
+      },
+      required: ["prospecto_id"],
+    },
+  },
+
+  // ── NOTAS DE CLIENTES ─────────────────────────────────────────────────────
+  {
+    name: "anadir_nota_cliente",
+    description: "Añade una nota o registro de actividad al historial de un cliente (no prospecto).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cliente_id: { type: "number" },
+        contenido:  { type: "string" },
+        tipo:       { type: "string", enum: ["nota","llamada","email","visita","reunion","otro"], default: "nota" },
+      },
+      required: ["cliente_id", "contenido"],
+    },
+  },
+
+  // ── TAREAS AVANZADAS ──────────────────────────────────────────────────────
+  {
+    name: "actualizar_tarea",
+    description: "Actualiza el título, descripción, prioridad, fecha o estado de una tarea existente.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id:                { type: "number" },
+        titulo:            { type: "string" },
+        descripcion:       { type: "string" },
+        tipo:              { type: "string", enum: ["llamada","email","reunion","visita","gestion","documentacion","otro"] },
+        prioridad:         { type: "string", enum: ["baja","media","alta","urgente"] },
+        estado:            { type: "string", enum: ["pendiente","en_progreso","completada","cancelada"] },
+        fecha_vencimiento: { type: "string" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "cancelar_tarea",
+    description: "Cancela una tarea pendiente.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "number" } },
+      required: ["id"],
+    },
+  },
+
+  // ── VISITAS AVANZADAS ─────────────────────────────────────────────────────
+  {
+    name: "actualizar_visita",
+    description: "Actualiza el estado de una visita: marcarla como realizada, cancelada o no presentado.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id:     { type: "number" },
+        estado: { type: "string", enum: ["programada","realizada","cancelada","no_presentado"] },
+      },
+      required: ["id", "estado"],
+    },
+  },
+
+  // ── CALENDARIO ────────────────────────────────────────────────────────────
+  {
+    name: "listar_eventos",
+    description: "Lista eventos del calendario del CRM en un rango de fechas.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        desde:  { type: "string", description: "Fecha inicio YYYY-MM-DD (default hoy)" },
+        hasta:  { type: "string", description: "Fecha fin YYYY-MM-DD (default +30 días)" },
+        limite: { type: "number" },
+      },
+    },
+  },
+  {
+    name: "crear_evento",
+    description: "Crea un evento en el calendario del CRM (reunión, cita, recordatorio).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        titulo:       { type: "string" },
+        tipo:         { type: "string", enum: ["tarea","reunion","visita","cita","otra"] },
+        fecha_inicio: { type: "string", description: "YYYY-MM-DD HH:MM" },
+        fecha_fin:    { type: "string", description: "YYYY-MM-DD HH:MM (opcional)" },
+        todo_dia:     { type: "boolean" },
+        ubicacion:    { type: "string" },
+        descripcion:  { type: "string" },
+        cliente_id:   { type: "number" },
+        propiedad_id: { type: "number" },
+      },
+      required: ["titulo", "fecha_inicio"],
+    },
+  },
+
+  // ── FINANZAS / COMISIONES ─────────────────────────────────────────────────
+  {
+    name: "listar_finanzas",
+    description: "Lista registros financieros del CRM: comisiones, honorarios y gastos. Incluye totales cobrado vs pendiente.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        estado: { type: "string", enum: ["cobrado","pendiente"] },
+        tipo:   { type: "string", enum: ["comision_venta","comision_alquiler","honorarios","gasto","ingreso_otro"] },
+        limite: { type: "number" },
+      },
+    },
+  },
+  {
+    name: "registrar_comision",
+    description: "Crea un registro de comisión, honorario o gasto en el módulo financiero del CRM.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        concepto:     { type: "string" },
+        importe:      { type: "number", description: "Importe neto (sin IVA)" },
+        iva:          { type: "number", description: "Importe del IVA (default 0)" },
+        tipo:         { type: "string", enum: ["comision_venta","comision_alquiler","honorarios","gasto","ingreso_otro"], default: "honorarios" },
+        estado:       { type: "string", enum: ["cobrado","pendiente"], default: "pendiente" },
+        fecha:        { type: "string", description: "YYYY-MM-DD (default hoy)" },
+        cliente_id:   { type: "number" },
+        propiedad_id: { type: "number" },
+        notas:        { type: "string" },
+      },
+      required: ["concepto", "importe"],
+    },
+  },
+  {
+    name: "marcar_cobrado",
+    description: "Marca un registro financiero (comisión u honorario) como cobrado.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "number" } },
+      required: ["id"],
+    },
+  },
+
+  // ── DOCUMENTOS ────────────────────────────────────────────────────────────
+  {
+    name: "listar_documentos",
+    description: "Lista documentos adjuntos a un cliente o propiedad.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cliente_id:   { type: "number" },
+        propiedad_id: { type: "number" },
+        limite:       { type: "number" },
+      },
+    },
+  },
+
+  // ── INFORMES ──────────────────────────────────────────────────────────────
+  {
+    name: "informe_prospectos",
+    description: "Informe del embudo de captación: prospectos por etapa y temperatura, vencidos sin contactar, captados este mes y a contactar esta semana.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "informe_finanzas",
+    description: "Informe financiero: comisiones por mes (últimos 6 meses), pendiente de cobro y total cobrado en el año.",
+    inputSchema: { type: "object", properties: {} },
+  },
+
+  // ── PIPELINES KANBAN ──────────────────────────────────────────────────────
+  {
+    name: "pipeline_kanban",
+    description: "Muestra el tablero Kanban de pipelines del CRM con los items en cada etapa.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pipeline_id: { type: "number", description: "ID del pipeline (si no se indica, muestra el primero)" },
+      },
+    },
+  },
+
+  // ── PORTALES INMOBILIARIOS ────────────────────────────────────────────────
+  {
+    name: "portales_propiedad",
+    description: "Lista los portales inmobiliarios disponibles y el estado de publicación de una propiedad en cada uno.",
+    inputSchema: {
+      type: "object",
+      properties: { propiedad_id: { type: "number" } },
+      required: ["propiedad_id"],
+    },
+  },
+  {
+    name: "publicar_portal",
+    description: "Publica o retira una propiedad de un portal inmobiliario.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        propiedad_id: { type: "number" },
+        portal_id:    { type: "number" },
+        accion:       { type: "string", enum: ["publicar","retirar"], default: "publicar" },
+        url:          { type: "string", description: "URL de la publicación en el portal" },
+        notas:        { type: "string" },
+      },
+      required: ["propiedad_id", "portal_id"],
+    },
+  },
+
+  // ── CONTRATOS ─────────────────────────────────────────────────────────────
+  {
+    name: "enviar_contrato",
+    description: "Envía un contrato por email al cliente para que lo firme electrónicamente.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "number", description: "ID del contrato" } },
+      required: ["id"],
+    },
+  },
 ];
 
 // ── Crear una instancia de servidor MCP para un token concreto ─────────────
@@ -606,6 +855,74 @@ function crearServidor(token) {
           break;
         case "buscar":
           data = await api(token, "buscar", { q: args.q });
+          break;
+        // ── Acciones rápidas de prospectos ──────────────────────────────────
+        case "programar_contacto":
+          data = await api(token, "programar_contacto", {}, "POST", args);
+          break;
+        case "mover_etapas":
+          data = await api(token, "mover_etapas", {}, "POST", args);
+          break;
+        case "convertir_a_cliente":
+          data = await api(token, "convertir_cliente", {}, "POST", args);
+          break;
+        // ── Clientes ────────────────────────────────────────────────────────
+        case "anadir_nota_cliente":
+          data = await api(token, "anadir_nota_cliente", {}, "POST", args);
+          break;
+        // ── Tareas ──────────────────────────────────────────────────────────
+        case "actualizar_tarea":
+          data = await api(token, "actualizar_tarea", {}, "POST", args);
+          break;
+        case "cancelar_tarea":
+          data = await api(token, "cancelar_tarea", {}, "POST", args);
+          break;
+        // ── Visitas ─────────────────────────────────────────────────────────
+        case "actualizar_visita":
+          data = await api(token, "actualizar_visita", {}, "POST", args);
+          break;
+        // ── Calendario ──────────────────────────────────────────────────────
+        case "listar_eventos":
+          data = await api(token, "calendario", { desde: args.desde, hasta: args.hasta, limit: args.limite || 50 });
+          break;
+        case "crear_evento":
+          data = await api(token, "crear_evento", {}, "POST", args);
+          break;
+        // ── Finanzas ────────────────────────────────────────────────────────
+        case "listar_finanzas":
+          data = await api(token, "finanzas", { estado: args.estado, tipo: args.tipo, limit: args.limite || 20 });
+          break;
+        case "registrar_comision":
+          data = await api(token, "crear_finanza", {}, "POST", args);
+          break;
+        case "marcar_cobrado":
+          data = await api(token, "marcar_cobrado", {}, "POST", args);
+          break;
+        // ── Documentos ──────────────────────────────────────────────────────
+        case "listar_documentos":
+          data = await api(token, "documentos", { cliente_id: args.cliente_id, propiedad_id: args.propiedad_id, limit: args.limite || 20 });
+          break;
+        // ── Informes ────────────────────────────────────────────────────────
+        case "informe_prospectos":
+          data = await api(token, "informe_prospectos", {});
+          break;
+        case "informe_finanzas":
+          data = await api(token, "informe_finanzas", {});
+          break;
+        // ── Pipelines ───────────────────────────────────────────────────────
+        case "pipeline_kanban":
+          data = await api(token, "pipeline_kanban", { pipeline_id: args.pipeline_id });
+          break;
+        // ── Portales ────────────────────────────────────────────────────────
+        case "portales_propiedad":
+          data = await api(token, "portales_propiedad", { propiedad_id: args.propiedad_id });
+          break;
+        case "publicar_portal":
+          data = await api(token, "publicar_portal", {}, "POST", args);
+          break;
+        // ── Contratos ───────────────────────────────────────────────────────
+        case "enviar_contrato":
+          data = await api(token, "enviar_contrato", {}, "POST", args);
           break;
         default:
           return { content: [{ type: "text", text: `Herramienta desconocida: ${name}` }], isError: true };
