@@ -12,7 +12,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { config as loadEnv } from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { randomBytes, randomUUID } from "crypto";
+import { randomBytes, randomUUID, createHash } from "crypto";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: join(__dirname, ".env") });
@@ -958,6 +958,13 @@ if (MODE === "sse") {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  // Log global de TODOS los requests entrantes
+  app.use((req, _res, next) => {
+    const auth = req.headers.authorization ? req.headers.authorization.slice(0, 20) + "..." : "ninguna";
+    console.log(`[REQ] ${req.method} ${req.path} | auth=${auth} | session=${req.headers["mcp-session-id"] || "-"}`);
+    next();
+  });
+
   // ── Almacenes en memoria ─────────────────────────────────────────────────
   const oauthClients    = {};  // clientId → clientSecret
   const authCodes       = {};  // code     → token_del_crm
@@ -987,6 +994,7 @@ if (MODE === "sse") {
     }
 
     const sessionId = req.headers["mcp-session-id"];
+    console.log(`[MCP] ${req.method} ${req.path} | session=${sessionId || "nueva"} | token=${token ? token.slice(0,8)+"..." : "NINGUNO"}`);
 
     // Sesión ya existente — delegar al transporte correcto
     if (sessionId && sesionesHTTP.has(sessionId)) {
@@ -1002,6 +1010,7 @@ if (MODE === "sse") {
     }
 
     if (token.length < 32) {
+      console.log("[MCP] Rechazado — token demasiado corto:", token.length, "chars");
       res.status(401).json({ error: "Token inválido. Genera uno en el CRM → Ajustes → Conector Claude (MCP)" });
       return;
     }
@@ -1069,7 +1078,8 @@ if (MODE === "sse") {
   // ── [LEGACY] Authorization Endpoint (página HTML) ───────────────────────
   app.get("/authorize", (req, res) => {
     console.log("[OAUTH] /authorize req.query:", req.query);
-    const { redirect_uri, state } = req.query;
+    // Pasar TODOS los parámetros OAuth al form para no perderlos en el POST
+    const params = new URLSearchParams(req.query).toString();
     res.send(`
       <!DOCTYPE html>
       <html>
@@ -1078,23 +1088,24 @@ if (MODE === "sse") {
         <title>Conectar CRM a IA</title>
         <style>
           body { font-family: system-ui, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f9f9f9; }
-          .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+          .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 420px; }
           h2 { margin-top: 0; color: #333; }
-          input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-          button { width: 100%; padding: 10px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+          p { color: #555; font-size: 0.95rem; }
+          input[type=text] { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-family: monospace; font-size: 0.9rem; }
+          button { width: 100%; padding: 12px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: 600; }
           button:hover { background: #005bb5; }
+          .hint { font-size: 0.8rem; color: #888; margin-top: 8px; }
         </style>
       </head>
       <body>
         <div class="card">
-          <h2>Autorizar IA</h2>
-          <p>Introduce tu token del CRM para conectar con la inteligencia artificial.</p>
-          <form method="POST" action="/authorize">
-            <input type="hidden" name="redirect_uri" value="${redirect_uri || ""}">
-            <input type="hidden" name="state" value="${state || ""}">
-            <input type="text" name="crm_token" placeholder="Ej: f3b1c9... (64 caracteres)" required>
+          <h2>🔐 Conectar CRM</h2>
+          <p>Introduce tu token personal del CRM (64 caracteres).<br>Lo encuentras en <strong>Ajustes → Conector Claude (MCP)</strong>.</p>
+          <form method="POST" action="/authorize?${params}">
+            <input type="text" name="crm_token" placeholder="f3b1c9d2e8a7..." autocomplete="off" required>
             <button type="submit">Conectar</button>
           </form>
+          <p class="hint">Este token es personal — cada usuario del CRM tiene el suyo.</p>
         </div>
       </body>
       </html>
@@ -1102,13 +1113,22 @@ if (MODE === "sse") {
   });
 
   app.post("/authorize", (req, res) => {
-    const { redirect_uri, state, crm_token } = req.body;
+    const redirect_uri = req.query.redirect_uri || req.body.redirect_uri || "";
+    const state        = req.query.state        || req.body.state        || "";
+    const code_challenge        = req.query.code_challenge        || "";
+    const code_challenge_method = req.query.code_challenge_method || "";
+    const crm_token    = (req.body.crm_token || "").trim();
+
     if (!redirect_uri) return res.status(400).send("Falta redirect_uri");
+    if (!crm_token)    return res.status(400).send("Falta el token del CRM");
+
     const code = randomBytes(16).toString("hex");
-    authCodes[code] = crm_token;
+    authCodes[code] = { token: crm_token, code_challenge, code_challenge_method };
+
     const url = new URL(redirect_uri);
     url.searchParams.set("code", code);
     if (state) url.searchParams.set("state", state);
+    console.log(`[OAUTH] Autorización → redirigiendo a Claude.ai con code`);
     res.redirect(url.toString());
   });
 
@@ -1116,11 +1136,39 @@ if (MODE === "sse") {
     console.log("[OAUTH] /token req.body:", req.body);
     const code = req.body.code || req.query.code;
     if (!code || !authCodes[code]) {
-      return res.status(400).json({ error: "invalid_grant" });
+      console.log("[OAUTH] /token → código inválido o expirado:", code);
+      return res.status(400).json({ error: "invalid_grant", error_description: "Código inválido o expirado" });
     }
-    const trueToken = authCodes[code];
+
+    const entry = authCodes[code];
     delete authCodes[code];
-    res.json({ access_token: trueToken, token_type: "Bearer", expires_in: 315360000 });
+
+    // Compatibilidad: entry puede ser string (versión vieja) u objeto (versión nueva)
+    const trueToken = typeof entry === "string" ? entry : entry.token;
+
+    // Validar PKCE si se usó code_challenge
+    if (typeof entry === "object" && entry.code_challenge) {
+      const verifier = req.body.code_verifier || "";
+      if (!verifier) {
+        console.log("[OAUTH] /token → falta code_verifier (PKCE requerido)");
+        return res.status(400).json({ error: "invalid_grant", error_description: "code_verifier requerido" });
+      }
+      const expected = createHash("sha256").update(verifier).digest("base64url");
+      if (expected !== entry.code_challenge) {
+        console.log("[OAUTH] /token → code_verifier inválido. Esperado:", entry.code_challenge, "Recibido hash:", expected);
+        return res.status(400).json({ error: "invalid_grant", error_description: "code_verifier no coincide" });
+      }
+      console.log("[OAUTH] /token → PKCE validado correctamente");
+    }
+
+    console.log("[OAUTH] /token → token entregado correctamente");
+    res.json({
+      access_token: trueToken,
+      token_type:   "Bearer",
+      expires_in:   315360000,
+      scope:        "mcp",
+      resource:     `https://${req.get("host")}/`,
+    });
   });
 
   // ── [LEGACY] SSE endpoint (/sse + /messages) — Claude.ai web, Perplexity ─

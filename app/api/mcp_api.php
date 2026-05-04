@@ -33,7 +33,15 @@ function getMcpUser(PDO $db): ?array {
 $db      = getDB();
 $user    = getMcpUser($db);
 
-// ── Diagnóstico temporal: test_auth no requiere token ─────────────────────
+// ── Diagnóstico temporal: endpoints públicos para debug ───────────────────
+if (($_GET['action'] ?? '') === 'db_debug') {
+    // Muestra cuántos tokens MCP hay en la BD y los últimos 4 chars (sin exponer el token completo)
+    $stmt2 = $db->query("SELECT ua.usuario_id, u.nombre, u.activo, RIGHT(ua.valor,4) as ultimos4, LENGTH(ua.valor) as longitud FROM usuario_ajustes ua JOIN usuarios u ON ua.usuario_id = u.id WHERE ua.clave = 'mcp_token' AND ua.valor != ''");
+    $rows = $stmt2->fetchAll(PDO::FETCH_ASSOC);
+    echo json_encode(['tokens_en_bd' => count($rows), 'entradas' => $rows], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 if (($_GET['action'] ?? '') === 'test_auth') {
     $t = trim($_GET['t'] ?? '');
     if (strlen($t) < 32) { echo json_encode(['valid' => false, 'reason' => 'token_corto']); exit; }
