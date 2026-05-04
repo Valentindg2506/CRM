@@ -1011,7 +1011,20 @@ if (MODE === "sse") {
 
     if (token.length < 32) {
       console.log("[MCP] Rechazado — token demasiado corto:", token.length, "chars");
-      res.status(401).json({ error: "Token inválido. Genera uno en el CRM → Ajustes → Conector Claude (MCP)" });
+      res.status(401).json({
+        jsonrpc: "2.0", id: null,
+        error: { code: -32000, message: "Token inválido. Genera uno en el CRM → Ajustes → Conector Claude (MCP)" }
+      });
+      return;
+    }
+
+    // Si el body está vacío o no es JSON-RPC válido, devolver error MCP correcto
+    if (!req.body || typeof req.body !== "object" || !req.body.method) {
+      console.log("[MCP] Body vacío o inválido — devolviendo error JSON-RPC");
+      res.status(400).json({
+        jsonrpc: "2.0", id: req.body?.id ?? null,
+        error: { code: -32600, message: "Invalid Request — se esperaba un mensaje JSON-RPC con método" }
+      });
       return;
     }
 
@@ -1163,11 +1176,12 @@ if (MODE === "sse") {
 
     console.log("[OAUTH] /token → token entregado correctamente");
     res.json({
-      access_token: trueToken,
-      token_type:   "Bearer",
-      expires_in:   315360000,
-      scope:        "mcp",
-      resource:     `https://${req.get("host")}/`,
+      access_token:  trueToken,
+      token_type:    "Bearer",
+      expires_in:    315360000,
+      scope:         "mcp",
+      resource:      `https://${req.get("host")}/`,
+      refresh_token: randomBytes(32).toString("hex"),
     });
   });
 
