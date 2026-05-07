@@ -1,0 +1,7 @@
+Options -Indexes
+RewriteEngine On
+
+# Redirigir todo dentro de /mcp/* a app/mcp.php con el path como parámetro
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /app/mcp.php?path=$1 [L,QSA]
